@@ -15,7 +15,6 @@ setup(
     description='AutoML for Kaggle Competitions',
     author='DATA Lab at Texas A&M University',
     author_email='jhfjhfj1@gmail.com',
-    download_url='https://github.com/jhfjhfj1/autokaggle/archive/0.1.0.tar.gz',
     keywords=['AutoML', 'Kaggle'],
     classifiers=[]
 )
