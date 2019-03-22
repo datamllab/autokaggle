@@ -1,4 +1,5 @@
 # autokaggle
+[![Build Status](https://travis-ci.org/datamllab/autokaggle.svg?branch=master)](https://travis-ci.org/datamllab/autokaggle)
 Automated Machine Learning (AutoML) for Kaggle Competition
 
 ### Automated tabular classifier tutorial.
