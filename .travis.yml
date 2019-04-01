@@ -1,0 +1,14 @@
+language: python
+python:
+- '3.6'
+install:
+- pip install -r requirements.txt --quiet
+- pip install pytest
+- pip install pytest-cov
+- pip install coverage
+- pip install mkdocs
+- pip install mkdocs-material
+script:
+- pytest tests --cov=autokaggle --cov-report xml:coverage.xml
+after_success:
+- pip install python-coveralls && coveralls

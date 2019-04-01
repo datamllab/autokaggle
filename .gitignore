@@ -6,6 +6,7 @@
 # Mkdocs
 /docs/
 /mkdocs/docs/temp
+/mkdocs/site
 
 .DS_Store
 .idea

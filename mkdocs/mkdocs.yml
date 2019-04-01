@@ -1,0 +1,19 @@
+site_name: Auto-Kaggle
+theme:
+  name: 'material'
+  palette:
+    primary: 'teal'
+    accent: 'teal'
+repo_url: https://github.com/datamllab/autokaggle
+site_url: http://autokaggle.com
+edit_uri: ""
+google_analytics: ['UA-44322747-3', 'autokeras.com']
+
+nav:
+    - Home: index.md
+    - Contributing Guide: temp/contribute.md
+    - Documentation:
+      - tabular_preprocessor: temp/tabular_preprocessor.md
+      - tabular_supervised: temp/tabular_supervised.md
+      - utils: temp/utils.md
+    - About: about.md
