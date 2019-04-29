@@ -29,15 +29,6 @@ Here is a short example of using the package.
     clf.fit(x_train, y_train, time_limit=12 * 60 * 60, data_info=datainfo)
 
 
-## Community
-
- 
-## Support Auto-Kaggle
-
-We accept donations on [Open Collective](https://opencollective.com/autokaggle).
-Thank every backer for supporting us!
-
-
 ## DISCLAIMER
 
 Please note that this is a **pre-release** version of the Auto-Kaggle which is still undergoing final testing before its official release. The website, its software and all content found on it are provided on an

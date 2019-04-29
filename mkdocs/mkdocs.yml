@@ -11,6 +11,7 @@ google_analytics: ['UA-44322747-3', 'autokeras.com']
 
 nav:
     - Home: index.md
+    - Getting Started: start.md
     - Contributing Guide: temp/contribute.md
     - Documentation:
       - tabular_preprocessor: temp/tabular_preprocessor.md
