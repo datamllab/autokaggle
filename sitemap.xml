@@ -2,32 +2,37 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
      <loc>http://autokaggle.com/</loc>
-     <lastmod>2019-03-31</lastmod>
+     <lastmod>2019-04-29</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+    <url>
+     <loc>http://autokaggle.com/start/</loc>
+     <lastmod>2019-04-29</lastmod>
      <changefreq>daily</changefreq>
     </url>
     <url>
      <loc>http://autokaggle.com/temp/contribute/</loc>
-     <lastmod>2019-03-31</lastmod>
+     <lastmod>2019-04-29</lastmod>
      <changefreq>daily</changefreq>
     </url>
     <url>
      <loc>http://autokaggle.com/temp/tabular_preprocessor/</loc>
-     <lastmod>2019-03-31</lastmod>
+     <lastmod>2019-04-29</lastmod>
      <changefreq>daily</changefreq>
     </url>
     <url>
      <loc>http://autokaggle.com/temp/tabular_supervised/</loc>
-     <lastmod>2019-03-31</lastmod>
+     <lastmod>2019-04-29</lastmod>
      <changefreq>daily</changefreq>
     </url>
     <url>
      <loc>http://autokaggle.com/temp/utils/</loc>
-     <lastmod>2019-03-31</lastmod>
+     <lastmod>2019-04-29</lastmod>
      <changefreq>daily</changefreq>
     </url>
     <url>
      <loc>http://autokaggle.com/about/</loc>
-     <lastmod>2019-03-31</lastmod>
+     <lastmod>2019-04-29</lastmod>
      <changefreq>daily</changefreq>
     </url>
 </urlset>
