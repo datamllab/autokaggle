@@ -1,5 +1,5 @@
 import numpy as np
-from autokeras import TabularClassifier
+from autokaggle import TabularClassifier
 
 if __name__ == '__main__':
     ntime, nnum, ncat = 4, 10, 8
