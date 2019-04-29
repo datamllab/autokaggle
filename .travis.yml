@@ -10,5 +10,6 @@ install:
 - pip install mkdocs-material
 script:
 - pytest tests --cov=autokaggle --cov-report xml:coverage.xml
+- sh docs.sh
 after_success:
 - pip install python-coveralls && coveralls
