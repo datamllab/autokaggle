@@ -13,3 +13,12 @@ script:
 - sh docs.sh
 after_success:
 - pip install python-coveralls && coveralls
+deploy:
+- provider: pages
+  skip-cleanup: true
+  github-token: "$GITHUB_TOKEN"
+  keep-history: true
+  local-dir: docs/
+  target-branch: gh-pages
+  on:
+    branch: master
