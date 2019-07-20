@@ -25,3 +25,11 @@ def rand_temp_folder_generator():
     path = sys_temp + '_' + random_suffix
     ensure_dir(path)
     return path
+
+def write_json(data, filename):
+    with open(filename, 'w') as outfile:
+        json.dump(data, outfile)
+        
+def read_json(filename):
+    with open(filename, 'rb') as infile:
+        return json.load(infile)
