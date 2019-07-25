@@ -100,7 +100,7 @@ class TabularPreprocessor:
         self.feature_add_cat_cat = 0
         self.order_num_cat_pair = {}
 
-        self.rest = None
+        self.selected_cols = None
         self.budget = None
         self.data_info = None
         self.n_time = None
@@ -108,10 +108,16 @@ class TabularPreprocessor:
         self.n_cat = None
 
     def remove_useless(self, x):
-        self.rest = np.where(np.max(x, 0) - np.min(x, 0) != 0)[0]
-        return x[:, self.rest]
+        """
+        Remove the columns whose max_value == min_value
+        """
+        self.selected_cols = np.where(np.max(x, axis=0) - np.min(x, axis=0) != 0)[0]
+        return x[:, self.selected_cols]
 
     def process_time(self, x):
+        """
+        Process the TIME features. Add the difference between consecutive columns as a feature.
+        """
         cols = range(self.n_time)
         if len(cols) > 10:
             cols = cols[:10]
@@ -122,6 +128,9 @@ class TabularPreprocessor:
         return x
 
     def extract_data(self, raw_x):
+        """
+        Encodes the catgorical data and returns all numeric values
+        """
         # only get numerical variables
         ret = np.concatenate([raw_x['TIME'], raw_x['NUM'], raw_x['CAT']], axis=1)
         n_rows = ret.shape[0]
@@ -242,7 +251,7 @@ class TabularPreprocessor:
         # Get Meta-Feature
         self.budget = time_limit
         self.data_info = data_info if data_info is not None else self.extract_data_info(raw_x)
-        print('QQ: {}'.format(self.data_info))
+        print('DATA_INFO: {}'.format(self.data_info))
 
         self.n_time = sum(self.data_info == 'TIME')
         self.n_num = sum(self.data_info == 'NUM')
@@ -250,9 +259,9 @@ class TabularPreprocessor:
 
         self.total_samples = raw_x.shape[0]
 
-        print('QQ1: {}'.format(self.n_time))
-        print('QQ2: {}'.format(self.n_num))
-        print('QQ3: {}'.format(self.n_cat))
+        print('#TIME features: {}'.format(self.n_time))
+        print('#NUM features: {}'.format(self.n_num))
+        print('#CAT features: {}'.format(self.n_cat))
         raw_x = {'TIME': raw_x[:, self.data_info == 'TIME'],
                  'NUM': raw_x[:, self.data_info == 'NUM'],
                  'CAT': raw_x[:, self.data_info == 'CAT']}
@@ -321,8 +330,8 @@ class TabularPreprocessor:
         x = self.cat_to_num(x)
 
         x = self.process_time(x)
-        if self.rest is not None:
-            x = x[:, self.rest]
+        if self.selected_cols is not None:
+            x = x[:, self.selected_cols]
         return x
 
     @staticmethod
