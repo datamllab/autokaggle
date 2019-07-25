@@ -5,6 +5,10 @@ import random
 import json
 
 
+def generate_rand_string(size):
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(size))
+    
 def ensure_dir(directory):
     """Create directory if it does not exist."""
     if not os.path.exists(directory):
@@ -19,11 +23,8 @@ def temp_path_generator():
 
 def rand_temp_folder_generator():
     """Create and return a temporary directory with the path name '/temp_dir_name/autokeras' (E:g:- /tmp/autokeras)."""
-    chars = string.ascii_uppercase + string.digits
-    size = 6
-    random_suffix = ''.join(random.choice(chars) for _ in range(size))
     sys_temp = temp_path_generator()
-    path = sys_temp + '_' + random_suffix
+    path = sys_temp + '_' + generate_rand_string(6)
     ensure_dir(path)
     return path
 
@@ -34,3 +35,8 @@ def write_json(data, filename):
 def read_json(filename):
     with open(filename, 'rb') as infile:
         return json.load(infile)
+
+def write_csv(filename, line):
+    with open(filename, "a") as f:
+        f.write(", ".join(map(str, line)))
+        f.write("\n")
