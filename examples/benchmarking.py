@@ -1,3 +1,5 @@
+import sys
+sys.path.append("../")
 import numpy as np
 import pandas as pd
 import sklearn.model_selection
@@ -26,8 +28,7 @@ class BenchmarkingBase:
         if supress_warnings:
             warnings.filterwarnings('ignore')
         self.results = []
-        if not sess_name:
-            sess_name = generate_rand_string(6)
+        self.sess_name = generate_rand_string(6) if not sess_name else sess_name
         self.cls_results = pd.DataFrame(columns=self.cls_desc)
         self.rgs_results = pd.DataFrame(columns=self.rgs_desc)
         
@@ -45,8 +46,10 @@ class BenchmarkingBase:
         return [mse, mae, r2]
     
     def export_results(self):
-        self.cls_results.to_csv(self.sess_name + "_classification_results.csv", index=False)
-        self.rgs_results.to_csv(self.sess_name + "_regression_results.csv", index=False)
+        if len(self.cls_results) > 0:
+            self.cls_results.to_csv(self.sess_name + "_classification_results.csv", index=False)
+        if len(self.rgs_results) > 0:
+            self.rgs_results.to_csv(self.sess_name + "_regression_results.csv", index=False)
     
     @abstractmethod
     def evaluate(self, task, time_limit):
@@ -65,8 +68,23 @@ class BenchmarkingBase:
             tl_results.append(self.evaluate(task_id, time_limit=time_limit))
         return tl_results
     
+    def get_dataset_splits(self, task_id):
+        task = openml.tasks.get_task(task_id)
+        train_indices, test_indices = task.get_train_test_split_indices()
+        dataset = task.get_dataset()
+        X, y, categorical_indicator, attribute_names = dataset.get_data(target=task.target_name, dataset_format='array')
+
+        x_train, y_train = X[train_indices], y[train_indices]
+        x_test, y_test = X[test_indices], y[test_indices]
+        return x_train, y_train, x_test, y_test
+    
     
 class BenchmarkingAutoKaggle(BenchmarkingBase):
+    estimator_type = None
+    
+    def set_estimator_type(self, est_type):
+        self.estimator_type = est_type
+        
     def get_data_info(self, dataset, num_cols):
         nominal_feat = dataset.get_features_by_type('nominal')
         numerical_feat = dataset.get_features_by_type('numeric')
@@ -98,9 +116,9 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
 
         # Train
         if task.task_type == 'Supervised Classification':
-            automl = AutoKaggle()
+            automl = AutoKaggle() if not self.estimator_type else AutoKaggle(self.estimator_type)
         elif task.task_type == 'Supervised Regression':
-            automl = AutoKaggle(LgbmRegressor)
+            automl = AutoKaggle(LgbmRegressor) if not self.estimator_type else AutoKaggle(self.estimator_type)
         else:
             print("UNSUPPORTED TASK_TYPE")
             assert(0)
@@ -116,7 +134,7 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
             self.cls_results.loc[len(self.cls_results)] = result
         elif task.task_type == 'Supervised Regression':
             result = task_info + self.measure_performance_rgs(y_test, y_hat)
-            self.rgs_results.loc[len(sel.rgs_results)] = result
+            self.rgs_results.loc[len(self.rgs_results)] = result
         print(result)
         return result
 
@@ -164,3 +182,91 @@ class BenchmarkingAutoSklearn(BenchmarkingBase):
         self.results.append(result)
         print(result)
         return result
+    
+def get_dataset_ids(task_ids):
+    if type(task_ids) == list:
+        return  [openml.tasks.get_task(t_id).dataset_id for t_id in task_ids]
+    else:
+        return  openml.tasks.get_task(task_ids).dataset_id
+
+def get_task_info(task_ids):
+    task_types = []
+    dataset_list = []
+    for i, t_id in enumerate(task_ids):
+        task = openml.tasks.get_task(t_id)
+        dataset = openml.datasets.get_dataset(task.dataset_id)
+        if task.task_type_id == 1:
+            _, y, _, _ = dataset.get_data(target=task.target_name, dataset_format='array')
+            task_type = "Binary Classification" if len(set(y)) <= 2 else "Multiclass classification ({})".format(len(set(y)))
+        else:
+            task_type = "Regression"
+        task_types.append(task_type)
+        dataset_list.append(dataset)
+    return dataset_list, task_types
+
+def get_dataset_properties(task_ids):
+    dataset_list, task_types = get_task_info(task_ids)
+    df = pd.DataFrame(columns=["Name", "#Samples", "Task_Type", "#Numeric", "#Nominal", "#String", "#Date"])
+    for i, dataset in enumerate(dataset_list):
+        df.loc[i] = [
+            dataset.name, 
+            dataset.qualities["NumberOfInstances"],
+            task_types[i],
+            len(dataset.get_features_by_type('numeric')), 
+            len(dataset.get_features_by_type('nominal')),
+            len(dataset.get_features_by_type('string')),
+            len(dataset.get_features_by_type('date')),
+        ]
+    return df
+
+def get_performance_table(filename, metric):
+    """
+    Read the results csv and convert into the performance table based on the median of the results for each task.
+    """
+    test = pd.read_csv(filename)
+    perf = pd.DataFrame(columns=["Name", "AutoKaggle", "AutoSklearn", "H2O.ai"])
+    task_ids = list(set(test["task_id"]))
+    dataset_ids = get_dataset_ids(task_ids)
+    
+    test = test.set_index(["task_id", "automl_model"])
+    test.sort_index(inplace=True)
+    for i, t_id in enumerate(task_ids):
+        try:
+            name = openml.datasets.get_dataset(dataset_ids[i]).name
+            auto_kaggle = test.loc[(t_id, "autokaggle")][metric].median() if (t_id, "autokaggle") in test.index else np.nan
+            auto_sklearn = test.loc[(t_id, "autosklearn")][metric].median() if (t_id, "autosklearn") in test.index else np.nan
+            h2o_ai = test.loc[(t_id, "autosklearn")][metric].median() if (t_id, "autosklearn") in test.index else np.nan
+            perf.loc[i] = [name, auto_kaggle, auto_sklearn, h2o_ai]
+        except Exception as e:
+            print(e)
+    return perf
+
+def style_results(res):
+    """
+    Highlight the max results and set index to name
+    """
+    def highlight_max(s):
+        '''
+        highlight the maximum in a Series yellow.
+        '''
+        is_max = s == s.max()
+        return ['background-color: yellow' if v else '' for v in is_max]
+    res = res.set_index("Name")
+    res.style.apply(highlight_max, axis=1)
+    return res
+
+import statistics
+def get_box_plot(data, task_id, metric):
+    """
+    Plots the boxplot of variance
+    """
+    auto_sklearn = list(data.loc[(task_id, "autosklearn")][metric])
+    auto_kaggle = list(data.loc[(task_id, "autokaggle")][metric])
+    med_sk = statistics.median(auto_sklearn)
+    med_ak = statistics.median(auto_kaggle)
+    while len(auto_sklearn) < len(auto_kaggle):
+        auto_sklearn.append(med_sk)
+    while len(auto_sklearn) > len(auto_kaggle):
+        auto_kaggle.append(med_ak)
+    temp = pd.DataFrame(data={"Autokaggle":auto_kaggle, "AutoSklearn":auto_sklearn})
+    temp.boxplot()

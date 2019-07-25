@@ -1,6 +1,9 @@
 import numpy as np
 from pandas import DataFrame
+import scipy
 from scipy.stats import pearsonr
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 LEVEL_HIGH = 32
 
@@ -96,8 +99,8 @@ class TabularPreprocessor:
         self.high_level_cat_keys = []
 
         self.feature_add_high_cat = 0
-        self.feature_add_cat_num = 0
-        self.feature_add_cat_cat = 0
+        self.feature_add_cat_num = 10
+        self.feature_add_cat_cat = 10
         self.order_num_cat_pair = {}
 
         self.selected_cols = None
@@ -106,6 +109,8 @@ class TabularPreprocessor:
         self.n_time = None
         self.n_num = None
         self.n_cat = None
+        self.pca = None
+        self.scaler = None
 
     def remove_useless(self, x):
         """
@@ -262,6 +267,9 @@ class TabularPreprocessor:
         print('#TIME features: {}'.format(self.n_time))
         print('#NUM features: {}'.format(self.n_num))
         print('#CAT features: {}'.format(self.n_cat))
+        
+        # Convert sparse to dense if needed
+        raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
         raw_x = {'TIME': raw_x[:, self.data_info == 'TIME'],
                  'NUM': raw_x[:, self.data_info == 'NUM'],
                  'CAT': raw_x[:, self.data_info == 'CAT']}
@@ -292,7 +300,17 @@ class TabularPreprocessor:
 
         # Encode high-order categorical data to numerical with frequency
         x = self.cat_to_num(x, y)
+        
+        # Standardize numeric columns
+        if self.n_num > 0:
+            self.scaler = StandardScaler()
+            x[:, :self.n_num] = self.scaler.fit_transform(x[:, :self.n_num])
 
+            # PCA for feature generation
+            self.pca = PCA(n_components=0.99, svd_solver='full')
+            x_pca = self.pca.fit_transform(x[:, :self.n_num])
+            x = np.concatenate([x, x_pca], axis=1)
+        
         x = self.process_time(x)
         x = self.remove_useless(x)
 
@@ -318,6 +336,8 @@ class TabularPreprocessor:
         else:
             self.budget = time_limit
 
+        # Convert sparse to dense if needed
+        raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
         raw_x = {'TIME': raw_x[:, self.data_info == 'TIME'],
                  'NUM': raw_x[:, self.data_info == 'NUM'],
                  'CAT': raw_x[:, self.data_info == 'CAT']}
@@ -330,6 +350,13 @@ class TabularPreprocessor:
         x = self.cat_to_num(x)
 
         x = self.process_time(x)
+        
+        if self.scaler:
+            x[:, :self.n_num] = self.scaler.transform(x[:, :self.n_num])
+        if self.pca:
+            x_pca = self.pca.transform(x[:, :self.n_num])
+            x = np.concatenate([x, x_pca], axis=1)
+        
         if self.selected_cols is not None:
             x = x[:, self.selected_cols]
         return x
