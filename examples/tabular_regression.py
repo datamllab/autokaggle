@@ -1,6 +1,6 @@
 import numpy as np
 import sys
-sys.path.append("../autokaggle/")
+sys.path.append("..")
 from autokaggle import *
 
 if __name__ == '__main__':
@@ -18,7 +18,7 @@ if __name__ == '__main__':
     y_train = y_all[:int(nsample * 0.8)]
     y_test = y_all[int(nsample * 0.8):]
 
-    clf = AutoKaggle(LgbmRegressor)
+    clf = AutoKaggle(LgbmRegressor())
     datainfo = np.array(['TIME'] * ntime + ['NUM'] * nnum + ['CAT'] * ncat)
     clf.fit(x_train, y_train, time_limit=12 * 60 * 60, data_info=datainfo)
 

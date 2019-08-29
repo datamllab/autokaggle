@@ -15,6 +15,7 @@ from joblib import dump, load
 
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
 
+
 class TabularEstimator(BaseEstimator):
     def __init__(self, path=None, verbose=True, time_limit=None):
         """
@@ -39,16 +40,21 @@ class TabularEstimator(BaseEstimator):
         y = self.clf.predict(x, )
         return y
     
-    def search(self, x, y, search_iter=40, folds=3):
+    @staticmethod
+    def subsample(x, y, sample_percent):
         # Set small sample for hyper-param search
         if x.shape[0] > 600:
-            grid_train_percentage = max(600.0 / x.shape[0], 0.1)
+            grid_train_percentage = max(600.0 / x.shape[0], sample_percent)
         else:
             grid_train_percentage = 1
         grid_n = int(x.shape[0] * grid_train_percentage)
         idx = random.sample(list(range(x.shape[0])), grid_n)
         grid_train_x, grid_train_y = x[idx, :], y[idx]
-        
+        return grid_train_x, grid_train_y
+
+    def search(self, x, y, search_iter=40, folds=3):
+        grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=0.1)
+
         if type(self.hparams) != list:
             self.hparams = [self.hparams]
             

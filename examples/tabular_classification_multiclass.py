@@ -1,6 +1,7 @@
 import numpy as np
 import sys
-sys.path.append("../autokaggle/")
+sys.path.append("..")
+# print(sys.path)
 from autokaggle import *
 
 if __name__ == '__main__':

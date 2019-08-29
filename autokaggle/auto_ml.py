@@ -11,17 +11,17 @@ from autokaggle.preprocessor import TabularPreprocessor
 from autokaggle.estimators import *
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
 
+
 class AutoKaggle(BaseEstimator):
-    def __init__(self, estimator_class=LgbmClassifier, path=None, verbose=True):
+    def __init__(self, estimator=LgbmClassifier(), preprocessor=TabularPreprocessor(), path=None, verbose=True):
         """
         Initialization function for tabular supervised learner.
         """
         self.verbose = verbose
         self.is_trained = False
         self.objective = None
-        self.preprocessor = None
-        self.model = None
-        self.estimator_class = estimator_class
+        self.preprocessor = preprocessor
+        self.model = estimator
         self.path = path if path is not None else rand_temp_folder_generator()
         ensure_dir(self.path)
         if self.verbose:
@@ -56,9 +56,9 @@ class AutoKaggle(BaseEstimator):
             x = np.concatenate([x, x], axis=0)
             y = np.concatenate([y, y], axis=0)
         
-        # Init model and preprocessor
-        self.model = self.estimator_class(verbose=self.verbose, path=self.path, time_limit=self.time_limit)
-        self.preprocessor = TabularPreprocessor()
+        # # Init model and preprocessor
+        # self.model = self.estimator_class(verbose=self.verbose, path=self.path, time_limit=self.time_limit)
+        # self.preprocessor = TabularPreprocessor()
             
         # Fit Model and preprocessor
         x = self.preprocessor.fit(x, y, self.time_limit, data_info)
