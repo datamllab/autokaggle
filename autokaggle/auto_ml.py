@@ -44,10 +44,7 @@ class AutoKaggle(BaseEstimator):
         you should warm-start your training from the pre-trained model. Past data will
         NOT be available for re-training.
         """
-
-        if time_limit is None:
-            time_limit = 24 * 60 * 60
-        self.time_limit = time_limit
+        self.time_limit = time_limit if time_limit else 24 * 60 * 60
         
         if x.shape[1] == 0:
             raise ValueError("No feature exist!")
@@ -63,7 +60,6 @@ class AutoKaggle(BaseEstimator):
         # Fit Model and preprocessor
         x = self.preprocessor.fit(x, y, self.time_limit, data_info)
         self.model.fit(x, y)
-        self.model.save_model()
         self.is_trained = True
 
         if self.verbose:
@@ -73,7 +69,7 @@ class AutoKaggle(BaseEstimator):
     def predict(self, x_test):
         """
         This function should provide predictions of labels on (test) data.
-        The function predict eventually casdn return probabilities or continuous values.
+        The function predict eventually can return probabilities or continuous values.
         """
         x_test = self.preprocessor.encode(x_test)
         y = self.model.predict(x_test, )

@@ -6,14 +6,17 @@ import random
 import json
 
 from lightgbm import LGBMClassifier, LGBMRegressor
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, cross_val_score
 from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error
+from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error, make_scorer
 from joblib import dump, load
 
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
+import hyperopt
+from hyperopt import tpe, hp, fmin, space_eval
 
 
 class TabularEstimator(BaseEstimator):
@@ -27,17 +30,16 @@ class TabularEstimator(BaseEstimator):
         self.objective = None
         abs_cwd = os.path.split(os.path.abspath(__file__))[0]
         self.hparams = read_json(abs_cwd + "/hparam_space/" + self._default_hyperparams)
-        self.clf = None
-        self.estimator = None
+        self.best_estimator_ = None
     
     def fit(self, x, y):
         self.init_model(y)
         self.search(x, y)
-        self.clf.fit(x, y)
+        self.best_estimator_.fit(x, y)
         self.save_model()
     
     def predict(self, x, y=None):
-        y = self.clf.predict(x, )
+        y = self.best_estimator_.predict(x, )
         return y
     
     @staticmethod
@@ -54,29 +56,64 @@ class TabularEstimator(BaseEstimator):
 
     def search(self, x, y, search_iter=40, folds=3):
         grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=0.1)
+        score_metric, skf = self.get_skf(folds)
 
-        if type(self.hparams) != list:
-            self.hparams = [self.hparams]
-            
-        best_params = {}
-        for idx, search_space in enumerate(self.hparams):
-            best_params.update(search_space)
-            if self.verbose:
-                print("Step: {}".format(idx+1))
-                print("Search space:")
-                print(best_params)
-                score_metric, skf = self.get_skf(folds)
-            random_search = RandomizedSearchCV(self.estimator, param_distributions=best_params, n_iter=search_iter,
-                                       scoring=score_metric,
-                                       n_jobs=1, cv=skf, verbose=0, random_state=1001, iid=False)
-            random_search.fit(grid_train_x, grid_train_y)
-            best_params = random_search.best_params_
-            for key, value in best_params.items():
-                best_params[key] = [value]
+        self.hparams = space = hp.choice('classifier', [
+            {'model': KNeighborsClassifier,
+             'param': {'n_neighbors':
+                           hp.choice('n_neighbors', range(3, 11)),
+                       'algorithm': hp.choice('algorithm', ['ball_tree', 'kd_tree']),
+                       'leaf_size': hp.choice('leaf_size', range(1, 50)),
+                       'metric': hp.choice('metric', ["euclidean", "manhattan",
+                                                      "chebyshev", "minkowski"
+                                                      ])}
+             },
+            {'model': SVC,
+             'param': {'C': hp.lognormal('C', 0, 1),
+                       'kernel': hp.choice('kernel', ['rbf', 'poly', 'rbf', 'sigmoid']),
+                       'degree': hp.choice('degree', range(1, 15)),
+                       'gamma': hp.uniform('gamma', 0.001, 10000)}
+             }
+        ])
 
-        self.clf = random_search.best_estimator_
+        def objective_func(args):
+            clf = args['model'](**args['param'])
+            loss = cross_val_score(clf, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
+            print("CV Score:", loss)
+            print("\n=================")
+            return 1 - loss
 
-        return random_search.best_params_
+        opt = space_eval(self.hparams, fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest,
+                                            max_evals=search_iter))
+        self.best_estimator_ = opt['model'](**opt['param'])
+
+        return opt
+
+    # def search(self, x, y, search_iter=40, folds=3):
+    #     grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=0.1)
+    #
+    #     if type(self.hparams) != list:
+    #         self.hparams = [self.hparams]
+    #
+    #     best_params = {}
+    #     for idx, search_space in enumerate(self.hparams):
+    #         best_params.update(search_space)
+    #         if self.verbose:
+    #             print("Step: {}".format(idx+1))
+    #             print("Search space:")
+    #             print(best_params)
+    #             score_metric, skf = self.get_skf(folds)
+    #         random_search = RandomizedSearchCV(self.estimator, param_distributions=best_params, n_iter=search_iter,
+    #                                    scoring=score_metric,
+    #                                    n_jobs=1, cv=skf, verbose=0, random_state=1001, iid=False)
+    #         random_search.fit(grid_train_x, grid_train_y)
+    #         best_params = random_search.best_params_
+    #         for key, value in best_params.items():
+    #             best_params[key] = [value]
+    #
+    #     self.best_estimator_ = random_search.best_estimator_
+    #
+    #     return random_search.best_params_
             
     @abstractmethod
     def save_model(self):
@@ -128,21 +165,21 @@ class LGBMMixIn:
     _default_hyperparams = "lgbm_hp.json"
     
     def save_model(self):
-        self.clf.booster_.save_model(self.save_filename)
+        self.best_estimator_.booster_.save_model(self.save_filename)
     
     def get_feature_importance(self):
-        if self.estimator:
+        if self.best_estimator_:
             print('Feature Importance:')
-            print(self.clf.feature_importances_)
+            print(self.best_estimator_.feature_importances_)
             
             
 class SklearnMixIn:
     
     def save_model(self):
-        dump(self.clf, self.save_filename)
+        dump(self.best_estimator_, self.save_filename)
         
     def load_model(self):
-        self.clf = load(self.save_filename)
+        self.best_estimator_ = load(self.save_filename)
 
         
 class SVMClassifier(Classifier, SklearnMixIn):

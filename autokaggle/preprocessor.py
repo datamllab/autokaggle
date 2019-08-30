@@ -253,15 +253,15 @@ class TabularPreprocessor:
                      'TIME' for temporal feature, 'NUM' for other numerical feature,
                      and 'CAT' for categorical feature.
         """
-        # Get Meta-Feature
         self.budget = time_limit
+        # Extract or read data info
         self.data_info = data_info if data_info is not None else self.extract_data_info(raw_x)
         print('DATA_INFO: {}'.format(self.data_info))
 
+        # Set the meta info for each data type
         self.n_time = sum(self.data_info == 'TIME')
         self.n_num = sum(self.data_info == 'NUM')
         self.n_cat = sum(self.data_info == 'CAT')
-
         self.total_samples = raw_x.shape[0]
 
         print('#TIME features: {}'.format(self.n_time))
@@ -270,11 +270,13 @@ class TabularPreprocessor:
         
         # Convert sparse to dense if needed
         raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
+
+        # convert to a dictionary of different datatype
         raw_x = {'TIME': raw_x[:, self.data_info == 'TIME'],
                  'NUM': raw_x[:, self.data_info == 'NUM'],
                  'CAT': raw_x[:, self.data_info == 'CAT']}
 
-
+        # Init the label encoders for each categorical column
         for col_index in range(self.n_num + self.n_time, self.n_num + self.n_time + self.n_cat):
             self.cat_to_int_label[col_index] = {}
 
