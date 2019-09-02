@@ -4,85 +4,14 @@ import scipy
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.base import TransformerMixin
+from sklearn.base import BaseEstimator
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from abc import abstractmethod
+import collections
+from lightgbm import LGBMClassifier, LGBMRegressor
 LEVEL_HIGH = 32
-
-
-def parallel_function(labels, first_batch_keys, task):
-    if task == 'label':
-        if min(labels) > first_batch_keys:
-            labels = labels - np.min(labels)
-        return labels.reshape(labels.shape[0], 1)
-
-    elif task == 'frequency':
-        cat_dict = {}
-        n_rows = labels.shape[0]
-        labels = np.expand_dims(labels, axis=1)
-
-        if min(labels) > first_batch_keys:
-            labels = labels - np.min(labels)
-
-        frequencies = np.zeros((n_rows, 1))
-
-        for row_index in range(n_rows):
-            key = labels[row_index, 0]
-            if key in cat_dict:
-                cat_dict[key] += 1
-            else:
-                cat_dict[key] = 1
-
-        n_level = len(cat_dict)
-        key_to_frequency = {}
-
-        for key in cat_dict.keys():
-            key_to_frequency[key] = cat_dict[key] / n_rows * n_level
-
-        for row_index in range(n_rows):
-            key = labels[row_index, 0]
-            frequencies[row_index][0] = key_to_frequency[key]
-
-        return frequencies
-    elif task == 'num_cat':
-        df = DataFrame(data=labels)
-        return df.join(df.groupby(1)[0].mean(),
-                       rsuffix='r',
-                       on=1).values[:, -1:]
-    elif task == 'cat_cat':
-        df = DataFrame(data=labels)
-        df[3] = list(range(len(labels)))
-        return df.join(df.groupby([0, 1]).count(),
-                       rsuffix='r',
-                       on=(0, 1)).values[:, -1:]
-    elif task == 'train_num_cat':
-        y = first_batch_keys[0]
-        df = DataFrame(data=labels)
-        fe = df.join(df.groupby(1)[0].mean(),
-                     rsuffix='r',
-                     on=1).values[:, -1:]
-        mu = abs(pearsonr(np.squeeze(np.array(fe)), y)[0])
-        if np.isnan(mu):
-            mu = 0
-        return [[first_batch_keys[1], first_batch_keys[2], mu, mu], first_batch_keys[3]]
-
-    elif task == 'train_cat_cat':
-        y = first_batch_keys[0]
-        df = DataFrame(data=labels)
-        df[3] = list(range(len(labels)))
-        fe = df.join(df.groupby([0, 1]).count(),
-                     rsuffix='r',
-                     on=(0, 1)).values[:, -1:]
-        mu = abs(pearsonr(np.squeeze(np.array(fe)), y)[0])
-        if np.isnan(mu):
-            mu = 0
-        return [[first_batch_keys[1], first_batch_keys[2], mu], first_batch_keys[3]]
-    return None
-
-
-def call_parallel(tasks):
-    results = []
-    for t in tasks:
-        results.append(parallel_function(t[0], t[1], t[2]))
-    return results
 
 
 class TabularPreprocessor:
@@ -109,136 +38,10 @@ class TabularPreprocessor:
         self.n_time = None
         self.n_num = None
         self.n_cat = None
-        self.pca = None
-        self.scaler = None
-
-    def remove_useless(self, x):
-        """
-        Remove the columns whose max_value == min_value
-        """
-        self.selected_cols = np.where(np.max(x, axis=0) - np.min(x, axis=0) != 0)[0]
-        return x[:, self.selected_cols]
-
-    def process_time(self, x):
-        """
-        Process the TIME features. Add the difference between consecutive columns as a feature.
-        """
-        cols = range(self.n_time)
-        if len(cols) > 10:
-            cols = cols[:10]
-        x_time = x[:, cols]
-        for i in cols:
-            for j in range(i + 1, len(cols)):
-                x = np.append(x, np.expand_dims(x_time[:, i] - x_time[:, j], 1), 1)
-        return x
-
-    def extract_data(self, raw_x):
-        """
-        Encodes the catgorical data and returns all numeric values
-        """
-        # only get numerical variables
-        ret = np.concatenate([raw_x['TIME'], raw_x['NUM'], raw_x['CAT']], axis=1)
-        n_rows = ret.shape[0]
-        n_num_col = ret.shape[1] - self.n_cat
-
-        n_cat_col = self.n_cat
-        if n_cat_col <= 0:
-            return ret.astype(np.float64)
-
-        # preprocess (multi-value) categorical data
-        for col_index in range(n_num_col, n_num_col + n_cat_col):
-            for row_index in range(n_rows):
-                key = str(ret[row_index, col_index])
-                if key in self.cat_to_int_label[col_index]:
-                    ret[row_index, col_index] = self.cat_to_int_label[col_index][key]
-                    continue
-                new_value = len(self.cat_to_int_label[col_index])
-                self.cat_to_int_label[col_index][key] = new_value
-                ret[row_index, col_index] = new_value
-
-        return ret.astype(np.float64)
-
-    def cat_to_num(self, x, y=None):
-        if y is not None:
-            mark = self.n_time + self.n_num
-
-            for col_index in range(self.n_time + self.n_num, self.n_time + self.n_num + self.n_cat):
-                if self.n_first_batch_keys[col_index] <= LEVEL_HIGH:
-                    self.num_cat_pair[mark] = (col_index,)
-                    mark += 1
-                else:
-                    self.num_cat_pair[mark] = (col_index, col_index)
-                    mark += 1
-
-            mark_1 = 0
-            tasks = []
-            for i, cat_col_index1 in enumerate(self.high_level_cat_keys):
-                for cat_col_index2 in self.high_level_cat_keys[i + 1:]:
-                    tasks.append((x[:, (cat_col_index1, cat_col_index2)],
-                                  [y, cat_col_index1, cat_col_index2, mark_1],
-                                  'train_cat_cat'))
-                    mark_1 += 1
-
-            all_results = call_parallel(tasks)
-
-            num_cat_pair_1 = {}
-            pearsonr_dict_1 = {}
-            for result in all_results:
-                if result[0][-1] > 0.001:
-                    pearsonr_dict_1[result[1]] = result[0][-1]
-                    num_cat_pair_1[result[1]] = result[0]
-            pearsonr_high_1 = sorted(pearsonr_dict_1, key=pearsonr_dict_1.get, reverse=True)[:self.feature_add_cat_cat]
-            num_cat_pair_1 = {key: num_cat_pair_1[key] for key in pearsonr_high_1}
-            num_cat_pair_1 = {i + mark: num_cat_pair_1[key] for i, key in enumerate(num_cat_pair_1)}
-            self.num_cat_pair.update(num_cat_pair_1)
-            mark += len(pearsonr_high_1)
-
-            mark_2 = 0
-            tasks_2 = []
-            for cat_col_index in self.high_level_cat_keys:
-                for num_col_index in range(self.n_time, self.n_time + self.n_num):
-                    tasks_2.append((x[:, (num_col_index, cat_col_index)],
-                                    [y, num_col_index, cat_col_index, mark_2],
-                                    'train_num_cat'))
-                    mark_2 += 1
-
-            all_results = call_parallel(tasks_2)
-
-            num_cat_pair_2 = {}
-            pearsonr_dict_2 = {}
-            for result in all_results:
-                if result[0][-1] > 0.001:
-                    pearsonr_dict_2[result[1]] = result[0][-1]
-                    num_cat_pair_2[result[1]] = result[0]
-            pearsonr_high_2 = sorted(pearsonr_dict_2, key=pearsonr_dict_2.get, reverse=True)[:self.feature_add_cat_num]
-            num_cat_pair_2 = {key: num_cat_pair_2[key] for key in pearsonr_high_2}
-            num_cat_pair_2 = {i + mark: num_cat_pair_2[key] for i, key in enumerate(num_cat_pair_2)}
-            self.num_cat_pair.update(num_cat_pair_2)
-            self.order_num_cat_pair = sorted(list(self.num_cat_pair.keys()))
-            print('num_cat_pair_2:', num_cat_pair_2)
-
-        tasks = []
-        for key in self.order_num_cat_pair:
-            if len(self.num_cat_pair[key]) == 1:
-                (col_index,) = self.num_cat_pair[key]
-                tasks.append((x[:, col_index], self.n_first_batch_keys[col_index], 'label'))
-            if len(self.num_cat_pair[key]) == 2:
-                (col_index, col_index) = self.num_cat_pair[key]
-                tasks.append((x[:, col_index], self.n_first_batch_keys[col_index], 'frequency'))
-            if len(self.num_cat_pair[key]) == 3:
-                (cat_col_index1, cat_col_index2, mu) = self.num_cat_pair[key]
-                tasks.append((x[:, (cat_col_index1,
-                                    cat_col_index2)], self.n_first_batch_keys[cat_col_index1], 'cat_cat'))
-            elif len(self.num_cat_pair[key]) == 4:
-                (num_col_index, cat_col_index, mu, a) = self.num_cat_pair[key]
-                tasks.append((x[:, (num_col_index, cat_col_index)], self.n_first_batch_keys[cat_col_index], 'num_cat'))
-
-        results = call_parallel(tasks)
-        all_num = x.shape[1] - self.n_cat
-        results = [x[:, :all_num]] + results
-        ret = np.concatenate(results, axis=1)
-
-        return ret
+        self.cat_col = None
+        self.num_col = None
+        self.time_col = None
+        self.pipeline = None
 
     def fit(self, raw_x, y, time_limit, data_info):
         """
@@ -264,6 +67,10 @@ class TabularPreprocessor:
         self.n_cat = sum(self.data_info == 'CAT')
         self.total_samples = raw_x.shape[0]
 
+        self.cat_col = list(np.where(self.data_info == 'CAT')[0])
+        self.num_col = list(np.where(self.data_info == 'NUM')[0])
+        self.time_col = list(np.where(self.data_info == 'TIME')[0])
+
         print('#TIME features: {}'.format(self.n_time))
         print('#NUM features: {}'.format(self.n_num))
         print('#CAT features: {}'.format(self.n_cat))
@@ -271,54 +78,21 @@ class TabularPreprocessor:
         # Convert sparse to dense if needed
         raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
 
-        # convert to a dictionary of different datatype
-        raw_x = {'TIME': raw_x[:, self.data_info == 'TIME'],
-                 'NUM': raw_x[:, self.data_info == 'NUM'],
-                 'CAT': raw_x[:, self.data_info == 'CAT']}
+        self.pipeline = Pipeline([
+            ('label_encoder', CatEncoder(selected_columns=self.cat_col)),
+            ('imputer', Imputation(selected_columns=self.cat_col + self.num_col + self.time_col)),
+            ('scaler', TabScaler(selected_columns=self.num_col)),
+            ('pca', TabPCA(selected_columns=self.num_col)),
+            ('time_diff', TimeDiff(selected_columns=self.time_col)),
+            ('filter', FilterConstant(selected_columns=self.time_col + self.num_col + self.cat_col)),
+            ('pearson_corr', FeatureFilter(selected_columns=self.time_col + self.num_col + self.cat_col)),
+            ('lgbm_feat_selection', FeatureImportance(selected_columns=self.time_col + self.num_col + self.cat_col)),
+        ])
+        self.pipeline.fit(raw_x, y)
 
-        # Init the label encoders for each categorical column
-        for col_index in range(self.n_num + self.n_time, self.n_num + self.n_time + self.n_cat):
-            self.cat_to_int_label[col_index] = {}
+        return self
 
-        x = self.extract_data(raw_x)
-
-        d_size = x.shape[0] * x.shape[1] / self.budget
-        if d_size > 35000:
-            self.feature_add_high_cat = 0
-        else:
-            self.feature_add_high_cat = 10
-
-        # Iterate cat features
-        for col_index in range(self.n_num + self.n_time, self.n_num + self.n_time + self.n_cat):
-            self.n_first_batch_keys[col_index] = len(self.cat_to_int_label[col_index])
-        high_level_cat_keys_tmp = sorted(self.n_first_batch_keys, key=self.n_first_batch_keys.get, reverse=True)[
-                                  :self.feature_add_high_cat]
-        for i in high_level_cat_keys_tmp:
-            if self.n_first_batch_keys[i] > 1e2:
-                self.high_level_cat_keys.append(i)
-
-        # Convert NaN to zeros
-        x = np.nan_to_num(x)
-
-        # Encode high-order categorical data to numerical with frequency
-        x = self.cat_to_num(x, y)
-        
-        # Standardize numeric columns
-        if self.n_num > 0:
-            self.scaler = StandardScaler()
-            x[:, :self.n_num] = self.scaler.fit_transform(x[:, :self.n_num])
-
-            # PCA for feature generation
-            self.pca = PCA(n_components=0.99, svd_solver='full')
-            x_pca = self.pca.fit_transform(x[:, :self.n_num])
-            x = np.concatenate([x, x_pca], axis=1)
-        
-        x = self.process_time(x)
-        x = self.remove_useless(x)
-
-        return x
-
-    def encode(self, raw_x, time_limit=None):
+    def transform(self, raw_x, time_limit=None):
         """
         This function should train the model parameters.
 
@@ -340,28 +114,7 @@ class TabularPreprocessor:
 
         # Convert sparse to dense if needed
         raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
-        raw_x = {'TIME': raw_x[:, self.data_info == 'TIME'],
-                 'NUM': raw_x[:, self.data_info == 'NUM'],
-                 'CAT': raw_x[:, self.data_info == 'CAT']}
-        x = self.extract_data(raw_x)
-
-        # Convert NaN to zeros
-        x = np.nan_to_num(x)
-
-        # Encode high-order categorical data to numerical with frequency
-        x = self.cat_to_num(x)
-
-        x = self.process_time(x)
-        
-        if self.scaler:
-            x[:, :self.n_num] = self.scaler.transform(x[:, :self.n_num])
-        if self.pca:
-            x_pca = self.pca.transform(x[:, :self.n_num])
-            x = np.concatenate([x, x_pca], axis=1)
-        
-        if self.selected_cols is not None:
-            x = x[:, self.selected_cols]
-        return x
+        return self.pipeline.transform(raw_x)
 
     @staticmethod
     def extract_data_info(raw_x):
@@ -380,3 +133,232 @@ class TabularPreprocessor:
             except:
                 data_info.append('CAT')
         return np.array(data_info)
+
+
+class TabularData:
+    def __init__(self, data, data_info):
+        self.data = data
+        self.data_info = data_info
+
+        self.total_samples = 0
+
+        self.cat_to_int_label = {}
+        self.n_first_batch_keys = {}
+        self.high_level_cat_keys = []
+
+        self.num_cat_pair = {}
+        self.feature_add_high_cat = 0
+        self.feature_add_cat_num = 10
+        self.feature_add_cat_cat = 10
+        self.order_num_cat_pair = {}
+
+        self.selected_cols = None
+
+        self.n_time = None
+        self.n_num = None
+        self.n_cat = None
+
+
+class Primitive(BaseEstimator, TransformerMixin):
+    def __init__(self, selected_columns=[], selected_type=None):
+        self.selected = selected_columns
+        self.selected_type = selected_type
+
+    @abstractmethod
+    def fit(self, X, y=None):
+        pass
+
+    @abstractmethod
+    def transform(self, X, y=None):
+        pass
+
+
+class TabScaler(Primitive):
+    scaler = None
+
+    def fit(self, X, y=None):
+        self.scaler = StandardScaler()
+        self.scaler.fit(X[:, self.selected], y)
+        return self
+
+    def transform(self, X, y=None):
+        X[:, self.selected] = self.scaler.transform(X[:, self.selected])
+        return X
+
+
+class CatEncoder(Primitive):
+    cat_to_int_label = {}
+
+    def fit(self, X, y=None):
+        for col_index in self.selected:
+            self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
+            for row_index in range(len(X)):
+                key = str(X[row_index, col_index])
+                if key not in self.cat_to_int_label[col_index]:
+                    self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
+        return self
+
+    def transform(self, X, y=None):
+        for col_index in self.selected:
+            for row_index in range(len(X)):
+                key = str(X[row_index, col_index])
+                X[row_index, col_index] = self.cat_to_int_label[col_index].get(key, np.nan)
+        return X
+
+
+class FilterConstant(Primitive):
+    selected_cols = []
+
+    def fit(self, X, y=None):
+        self.selected_cols = np.where(np.max(X, axis=0) - np.min(X, axis=0) != 0)[0]
+        return self
+
+    def transform(self, X, y=None):
+        return X[:, self.selected_cols]
+
+
+class TimeDiff(Primitive):
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        x_time = X[:, self.selected]
+        len_cols = x_time.shape[1]
+        for i in range(len_cols):
+            for j in range(i + 1, len_cols):
+                X = np.append(X, np.expand_dims(x_time[:, i] - x_time[:, j], 1), 1)
+        return X
+
+
+class TabPCA(Primitive):
+    pca = None
+
+    def fit(self, X, y=None):
+        self.pca = PCA(n_components=0.99, svd_solver='full')
+        return self
+
+    def transform(self, X, y=None):
+        x_pca = self.pca.fit_transform(X[:, self.selected])
+        return np.concatenate([X, x_pca], axis=1)
+
+
+class CatCount(Primitive):
+    count_dict = {}
+
+    def fit(self, X, y=None):
+        for col in self.selected:
+            self.count_dict[col] = collections.Counter(X[:, col])
+        return self
+
+    def transform(self, X, y=None):
+        for col in self.selected:
+            gen_freq = np.vectorize(lambda key: self.count_dict[col][key])
+            X[:, col] = gen_freq(X[:, col])
+        return X
+
+
+class LogTransform(Primitive):
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        for col in self.selected:
+            X[:, col] = np.square(np.log(X[:, col]))
+        return X
+
+
+class Imputation(Primitive):
+    imputer = None
+
+    def fit(self, X, y=None):
+        self.imputer = SimpleImputer(strategy='most_frequent')
+        self.imputer.fit(X)
+        return self
+
+    def transform(self, X, y=None):
+        return self.imputer.transform(X)
+
+
+class FeatureFilter(Primitive):
+    def __init__(self, selected_columns=[], selected_type=None, threshold=0.001):
+        super().__init__(selected_columns, selected_type)
+        self.threshold = threshold
+        self.drop_columns = []
+
+    def fit(self, X, y=None):
+        for col in self.selected:
+            mu = abs(pearsonr(X[:, col], y)[0])
+            if np.isnan(mu):
+                mu = 0
+            if mu < self.threshold:
+                self.drop_columns.append(col)
+        return self
+
+    def transform(self, X, y=None):
+        X = np.delete(X, self.drop_columns, axis=1)
+        return X
+
+
+class FeatureImportance(Primitive):
+    def __init__(self, selected_columns=[], selected_type=None, threshold=0.001, task_type='classification'):
+        super().__init__(selected_columns, selected_type)
+        self.threshold = threshold
+        self.drop_columns = []
+        self.task_type = task_type
+
+    def fit(self, X, y=None):
+        if self.task_type == 'classification':
+            n_classes = len(set(y))
+            if n_classes == 2:
+                estimator = LGBMClassifier(silent=False,
+                                           verbose=-1,
+                                           n_jobs=1,
+                                           objective='binary')
+            else:
+                estimator = LGBMClassifier(silent=False,
+                                           verbose=-1,
+                                           n_jobs=1,
+                                           num_class=n_classes,
+                                           objective='multiclass')
+        elif self.task_type == 'regression':
+            estimator = LGBMRegressor(silent=False,
+                                      verbose=-1,
+                                      n_jobs=1,
+                                      objective='regression')
+        estimator.fit(X, y)
+        feature_importance = estimator.feature_importances_
+        feature_importance = feature_importance/feature_importance.mean()
+        self.drop_columns = np.where(feature_importance < self.threshold)[0]
+        return self
+
+    def transform(self, X, y=None):
+        X = np.delete(X, self.drop_columns, axis=1)
+        return X
+
+
+if __name__ == "__main__":
+    ntime, nnum, ncat = 4, 10, 8
+    nsample = 1000
+    x_num = np.random.random([nsample, nnum])
+    x_time = np.random.random([nsample, ntime])
+    x_cat = np.random.randint(0, 10, [nsample, ncat])
+
+    x_all = np.concatenate([x_num, x_time, x_cat], axis=1)
+    x_train = x_all[:int(nsample * 0.8), :]
+    x_test = x_all[int(nsample * 0.8):, :]
+
+    y_all = np.random.randint(0, 2, nsample)
+    y_train = y_all[:int(nsample * 0.8)]
+    y_test = y_all[int(nsample * 0.8):]
+
+    datainfo = np.array(['TIME'] * ntime + ['NUM'] * nnum + ['CAT'] * ncat)
+    print(x_train[:4, 20])
+    prep = TabularPreprocessor()
+    prep.fit(x_train, y_train, 24*60*60, datainfo)
+    x_new = prep.transform(x_train)
+
+    print("-----")
+    print(x_new[:4, 2])
+

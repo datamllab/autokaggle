@@ -58,7 +58,8 @@ class AutoKaggle(BaseEstimator):
         # self.preprocessor = TabularPreprocessor()
             
         # Fit Model and preprocessor
-        x = self.preprocessor.fit(x, y, self.time_limit, data_info)
+        self.preprocessor.fit(x, y, self.time_limit, data_info)
+        x = self.preprocessor.transform(x)
         self.model.fit(x, y)
         self.is_trained = True
 
@@ -71,7 +72,7 @@ class AutoKaggle(BaseEstimator):
         This function should provide predictions of labels on (test) data.
         The function predict eventually can return probabilities or continuous values.
         """
-        x_test = self.preprocessor.encode(x_test)
+        x_test = self.preprocessor.transform(x_test)
         y = self.model.predict(x_test, )
         if y is None:
             raise ValueError("Tabular predictor does not exist")
@@ -91,5 +92,5 @@ class AutoKaggle(BaseEstimator):
         return results
 
     def final_fit(self, x_train, y_train):
-        x_train = self.preprocessor.encode(x_train)
+        x_train = self.preprocessor.transform(x_train)
         self.model.fit(x_train, y_train)
