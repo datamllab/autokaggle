@@ -3,7 +3,6 @@ import sys
 sys.path.append("..")
 # print(sys.path)
 from autokaggle import *
-
 if __name__ == '__main__':
     ntime, nnum, ncat = 4, 10, 8
     nsample = 10000
