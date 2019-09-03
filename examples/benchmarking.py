@@ -1,3 +1,5 @@
+import string
+import random
 import sys
 sys.path.append("../")
 import numpy as np
@@ -15,9 +17,11 @@ openml.config.apikey = '3c7196c92a274c3b9405a7e26e9f848e'
 import warnings
 from abc import abstractmethod
 
+
 def generate_rand_string(size):
     chars = string.ascii_uppercase + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
+
 
 class BenchmarkingBase:
     results = None
@@ -118,7 +122,7 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
         if task.task_type == 'Supervised Classification':
             automl = AutoKaggle() if not self.estimator_type else AutoKaggle(self.estimator_type)
         elif task.task_type == 'Supervised Regression':
-            automl = AutoKaggle(LgbmRegressor) if not self.estimator_type else AutoKaggle(self.estimator_type)
+            automl = AutoKaggle(Regressor()) if not self.estimator_type else AutoKaggle(self.estimator_type)
         else:
             print("UNSUPPORTED TASK_TYPE")
             assert(0)

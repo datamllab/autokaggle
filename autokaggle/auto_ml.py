@@ -13,7 +13,7 @@ from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json,
 
 
 class AutoKaggle(BaseEstimator):
-    def __init__(self, estimator=LgbmClassifier(), preprocessor=TabularPreprocessor(), path=None, verbose=True):
+    def __init__(self, estimator=Classifier(), preprocessor=TabularPreprocessor(), path=None, verbose=True):
         """
         Initialization function for tabular supervised learner.
         """

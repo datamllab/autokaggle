@@ -10,49 +10,88 @@ from sklearn.model_selection import RandomizedSearchCV, cross_val_score
 from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, RandomForestRegressor, AdaBoostRegressor,\
+    ExtraTreesRegressor
+from sklearn.linear_model import Ridge
 from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error, make_scorer
 from joblib import dump, load
 
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
+from autokaggle.ensemblers import RankedEnsembler, StackingEnsembler
 import hyperopt
 from hyperopt import tpe, hp, fmin, space_eval, Trials, STATUS_OK
 
 knn_classifier_params = {'n_neighbors': hp.choice('n_neighbors', range(2, 20)),
-                       'algorithm': hp.choice('algorithm', ['ball_tree', 'kd_tree', 'brute']),
-                       'leaf_size': hp.choice('leaf_size', range(5, 50)),
-                       'metric': hp.choice('metric', ["euclidean", "manhattan",
-                                                      "chebyshev", "minkowski"
-                                                      ]),
-                       'p': hp.choice('p', range(1, 4)),
-                       }
+                         'algorithm': hp.choice('algorithm', ['ball_tree', 'kd_tree', 'brute']),
+                         'leaf_size': hp.choice('leaf_size', range(5, 50)),
+                         'metric': hp.choice('metric', ["euclidean", "manhattan",
+                                                        "chebyshev", "minkowski"
+                                                        ]),
+                         'p': hp.choice('p', range(1, 4)),
+                         }
+
 svc_params = {'C': hp.lognormal('C', 0, 1),
-                       'kernel': hp.choice('kernel', ['rbf', 'poly', 'linear', 'sigmoid']),
-                       'degree': hp.choice('degree', range(1, 6)),
-                       'gamma': hp.uniform('gamma', 0.001, 10000),
-                       'max_iter': 50000,
-                       }
+              'kernel': hp.choice('kernel', ['rbf', 'poly', 'linear', 'sigmoid']),
+              'degree': hp.choice('degree', range(1, 6)),
+              'gamma': hp.uniform('gamma', 0.001, 10000),
+              'max_iter': 50000,
+              }
 
 random_forest_classifier_params = {'criterion': hp.choice('criterion', ['entropy', 'gini']),
-                       'max_features': hp.uniform('max_features', 0, 1.0),
-                       'n_estimators': hp.choice('rf_n_estimators', range(50, 200)),
-                       'min_samples_leaf': hp.choice('min_samples_leaf', range(1, 10))}
+                                   'max_features': hp.uniform('max_features', 0, 1.0),
+                                   'n_estimators': hp.choice('rf_n_estimators', range(50, 200)),
+                                   'min_samples_leaf': hp.choice('min_samples_leaf', range(1, 10))}
 
 lgbm_classifier_params = {'boosting_type': 'gbdt',
-                       'min_split_gain': 0.1,
-                       'subsample': 0.8,
-                       'num_leaves': 80,
-                       'colsample_bytree': hp.uniform('colsample_bytree', 0.4, 0.8),
-                       'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
-                       'max_depth': hp.choice('max_depth', range(5, 10)),
-                       'n_estimators': hp.choice('n_estimators', range(50, 200)),
-                       'learning_rate': hp.lognormal('learning_rate', 0, 1),
-                       }
+                          'min_split_gain': 0.1,
+                          'subsample': 0.8,
+                          'num_leaves': 80,
+                          'colsample_bytree': hp.uniform('colsample_bytree', 0.4, 0.8),
+                          'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
+                          'max_depth': hp.choice('max_depth', range(5, 10)),
+                          'n_estimators': hp.choice('n_estimators', range(50, 200)),
+                          'learning_rate': hp.lognormal('learning_rate', 0, 1),
+                          }
 
 adaboost_classifier_params = {'algorithm': hp.choice('algorithm_adaboost', ['SAMME.R', 'SAMME']),
-                       'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
-                       'learning_rate': hp.lognormal('learning_rate_adaboost', 0, 1),
-                       }
+                              'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
+                              'learning_rate': hp.lognormal('learning_rate_adaboost', 0, 1),
+                              }
+
+extra_trees_regressor_params = {
+    'n_estimators': hp.choice('n_estimators_extra_trees', range(50, 200)),
+    'criterion': hp.choice('criterion_extra_trees', ['mse', 'friedman_mse', 'mae']),
+    'max_features': hp.uniform('max_features_extra_trees', 0, 1.0),
+    'min_samples_leaf': hp.choice('min_samples_leaf_extra_trees', range(1, 10)),
+    'min_impurity_decrease': 0.0
+}
+ridge_params = {
+    'fit_intercept': True,
+    'tol': hp.loguniform('tol_ridge', 1e-5, 1e-1),
+    'alpha': hp.loguniform('alpha_ridge', 1e-5, 10)
+}
+random_forest_regressor_params = {
+    'criterion': hp.choice('criterion', ['mse', 'friedman_mse', 'mae']),
+    'max_features': hp.uniform('max_features', 0, 1.0),
+    'n_estimators': hp.choice('rf_n_estimators', range(50, 200)),
+    'min_samples_leaf': hp.choice('min_samples_leaf', range(1, 10))
+}
+lgbm_regressor_params = {
+    'boosting_type': 'gbdt',
+    'min_split_gain': 0.1,
+    'subsample': 0.8,
+    'num_leaves': 80,
+    'colsample_bytree': hp.uniform('colsample_bytree', 0.4, 0.8),
+    'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
+    'max_depth': hp.choice('max_depth', range(5, 10)),
+    'n_estimators': hp.choice('n_estimators', range(50, 200)),
+    'learning_rate': hp.lognormal('learning_rate', 0, 1),
+}
+adaboost_regressor_params = {
+    'loss': hp.choice('loss_adaboost', ["linear", "square", "exponential"]),
+    'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
+    'learning_rate': hp.lognormal('learning_rate_adaboost', 0, 1),
+}
 
 
 class TabularEstimator(BaseEstimator):
@@ -65,19 +104,21 @@ class TabularEstimator(BaseEstimator):
         self.time_limit = time_limit
         self.objective = None
         abs_cwd = os.path.split(os.path.abspath(__file__))[0]
-        self.hparams = read_json(abs_cwd + "/hparam_space/" + self._default_hyperparams)
+        # self.hparams = read_json(abs_cwd + "/hparam_space/" + self._default_hyperparams)
         self.best_estimator_ = None
         self.ensemble_models = True
     
     def fit(self, x, y):
-        self.init_model(y)
+        if self.objective == 'classification':
+            n_classes = len(set(y))
+            self.objective = 'binary' if n_classes == 2 else 'multiclass'
         self.search(x, y)
         self.best_estimator_.fit(x, y)
         self.save_model()
     
     def predict(self, x, y=None):
-        y = self.best_estimator_.predict(x, )
-        return y
+        y_pred = self.best_estimator_.predict(x, )
+        return y_pred
     
     @staticmethod
     def subsample(x, y, sample_percent):
@@ -95,6 +136,44 @@ class TabularEstimator(BaseEstimator):
         grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=0.1)
         score_metric, skf = self.get_skf(folds)
 
+        def objective_func(args):
+            clf = args['model'](**args['param'])
+            loss = cross_val_score(clf, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
+            print("CV Score:", loss)
+            print("\n=================")
+            return {'loss': 1 - loss, 'status': STATUS_OK, 'space': args}
+
+        trials = Trials()
+        best = fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials, max_evals=search_iter)
+        if self.ensemble_models:
+            best_trials = sorted(trials.results, key=lambda k: k['loss'], reverse=False)
+            estimator_list = []
+            for i in range(2):
+                model_params = best_trials[i]['space']
+                est = model_params['model'](**model_params['param'])
+                estimator_list.append(est)
+            # self.best_estimator_ = RankedEnsembler(estimator_list, ensemble_method='max_voting')
+            self.best_estimator_ = StackingEnsembler(estimator_list, objective=self.objective)
+        else:
+            opt = space_eval(self.hparams, best)
+            self.best_estimator_ = opt['model'](**opt['param'])
+            
+    @abstractmethod
+    def save_model(self):
+        pass
+    
+    @abstractmethod
+    def get_skf(self, folds):
+        pass
+    
+    
+class Classifier(TabularEstimator):
+    """Classifier class.
+     It is used for tabular data classification.
+    """ 
+    def __init__(self, path=None, verbose=True, time_limit=None):
+        super().__init__(path, verbose, time_limit)
+        self.objective = 'classification'
         self.hparams = hp.choice('classifier', [
             {'model': KNeighborsClassifier,
              'param': knn_classifier_params
@@ -113,53 +192,6 @@ class TabularEstimator(BaseEstimator):
              }
         ])
 
-        def objective_func(args):
-            clf = args['model'](**args['param'])
-            loss = cross_val_score(clf, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
-            print("CV Score:", loss)
-            print("\n=================")
-            return {'loss': 1 - loss, 'status': STATUS_OK, 'space': args}
-
-        trials = Trials()
-        opt = space_eval(self.hparams, fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials,
-                                            max_evals=search_iter))
-        if self.ensemble_models:
-            best_trials = sorted(trials.results, key=lambda k: k['loss'], reverse=False)
-            estimator_list = []
-            for i in range(2):
-                model_params = best_trials[i]['space']
-                est = model_params['model'](**model_params['param'])
-                estimator_list.append(est)
-            self.best_estimator_ = Ensembler(x, y, estimator_list)
-        else:
-            self.best_estimator_ = opt['model'](**opt['param'])
-
-        return opt
-            
-    @abstractmethod
-    def save_model(self):
-        pass
-    
-    @abstractmethod
-    def init_model(self, y):
-        pass
-    
-    @abstractmethod
-    def get_skf(self, folds):
-        pass
-    
-    def __repr__(self):
-        return "TabularEstimator model"
-    
-    
-class Classifier(TabularEstimator):
-    """Classifier class.
-     It is used for tabular data classification with lightgbm classifier.
-    """ 
-    def __init__(self, path=None, verbose=True, time_limit=None):
-        super().__init__(path, verbose, time_limit)
-        self.objective = 'classification'
-
     def get_skf(self, folds):
         if self.objective == 'binary':
             score_metric = 'roc_auc'
@@ -172,75 +204,41 @@ class Classifier(TabularEstimator):
     
 class Regressor(TabularEstimator):
     """Regressor class.
-    It is used for tabular data regression with lightgbm regressor.
+    It is used for tabular data regression.
     """
     def __init__(self, path=None, verbose=True, time_limit=None):
         super().__init__(path, verbose, time_limit)
         self.objective = 'regression'
+        self.hparams = hp.choice('regressor', [
+            {'model': ExtraTreesRegressor,
+             'param': extra_trees_regressor_params
+             },
+            {'model': Ridge,
+             'param': ridge_params
+             },
+            {'model': RandomForestRegressor,
+             'param': random_forest_regressor_params
+             },
+            {'model': LGBMRegressor,
+             'param': lgbm_regressor_params
+             },
+            {'model': AdaBoostRegressor,
+             'param': adaboost_regressor_params
+             }
+            ])
 
     def get_skf(self, folds):
         return 'neg_mean_squared_error', KFold(n_splits=folds, shuffle=True, random_state=1001)
     
     
 class LGBMMixIn:
-    _default_hyperparams = "lgbm_hp.json"
-    
     def save_model(self):
         self.best_estimator_.booster_.save_model(self.save_filename)
-    
-    def get_feature_importance(self):
-        if self.best_estimator_:
-            print('Feature Importance:')
-            print(self.best_estimator_.feature_importances_)
             
             
 class SklearnMixIn:
-    
     def save_model(self):
         dump(self.best_estimator_, self.save_filename)
         
     def load_model(self):
         self.best_estimator_ = load(self.save_filename)
-
-        
-class SVMClassifier(Classifier, SklearnMixIn):
-    _default_hyperparams = "svm_hp.json"
-        
-    def init_model(self, y):
-        n_classes = len(set(y))
-        self.objective = 'binary' if n_classes == 2 else 'multiclass'
-        self.estimator = SVC()
-
-        
-class RFClassifier(Classifier, SklearnMixIn):
-    _default_hyperparams = "rf_hp.json"
-        
-    def init_model(self, y):
-        n_classes = len(set(y))
-        self.objective = 'binary' if n_classes == 2 else 'multiclass'
-        self.estimator = RandomForestClassifier()
-        
-class LgbmClassifier(Classifier, LGBMMixIn):
-    def init_model(self, y):
-        n_classes = len(set(y))
-        if n_classes == 2:
-            self.objective = 'binary'
-            self.estimator = LGBMClassifier(silent=False,
-                                       verbose=-1,
-                                       n_jobs=1,
-                                       objective=self.objective)
-        else:
-            self.objective = 'multiclass'
-            self.estimator = LGBMClassifier(silent=False,
-                                       verbose=-1,
-                                       n_jobs=1,
-                                       num_class=n_classes,
-                                       objective=self.objective)
-
-            
-class LgbmRegressor(Regressor, LGBMMixIn):
-    def init_model(self, y):
-        self.estimator = LGBMRegressor(silent=False,
-                                  verbose=-1,
-                                  n_jobs=1,
-                                  objective=self.objective)

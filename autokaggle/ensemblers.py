@@ -12,26 +12,65 @@ from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error
 from joblib import dump, load
+from scipy import stats
+from lightgbm import LGBMClassifier, LGBMRegressor
 
 
 class RankedEnsembler:
-    def __init__(self, ensemble_method='max_voting'):
+    def __init__(self, estimator_list, ensemble_method='max_voting'):
         self.ensemble_method = ensemble_method
+        self.estimators = estimator_list
         
-    def fit(self, predictions, y_true):
-        pass
+    def fit(self, X, y):
+        for est in self.estimators:
+            est.fit(X, y)
     
-    def predict(self, predictions):
+    def predict(self, X):
+        predictions = np.zeros((len(X), len(self.estimators)))
+        for i, est in enumerate(self.estimators):
+            predictions[:, i] = est.predict(X)
+
         if self.ensemble_method == 'median':
-            return predictions.apply(np.median, axis=1).values
+            return np.median(predictions, axis=1)
         elif self.ensemble_method == 'mean':
-            return predictions.apply(np.average, axis=1).values
+            return np.mean(predictions, axis=1)
         elif self.ensemble_method == 'max':
-            return predictions.apply(np.max, axis=1).values
+            return np.max(predictions, axis=1)
         elif self.ensemble_method == 'min':
-            return predictions.apply(np.min, axis=1).values
+            return np.min(predictions, axis=1)
         elif self.ensemble_method == 'max_voting':
-            return predictions.apply(mode, axis=1).values
+            return stats.mode(predictions, axis=1)[0]
+
+
+class StackingEnsembler:
+    def __init__(self, estimator_list, objective):
+        self.estimator_list = estimator_list
+        self.objective = objective
+        if self.objective == 'regression':
+            self.stacking_estimator = LGBMRegressor(silent=False,
+                                           verbose=-1,
+                                           n_jobs=1,
+                                           objective=self.objective)
+        elif self.objective == 'multiclass' or self.objective == 'binary':
+            self.stacking_estimator = LGBMClassifier(silent=False,
+                                            verbose=-1,
+                                            n_jobs=1,
+                                            objective=self.objective)
+
+    def fit(self, X, y):
+        for est in self.estimator_list:
+            est.fit(X, y)
+        predictions = np.zeros((len(X), len(self.estimator_list)))
+        for i, est in enumerate(self.estimator_list):
+            predictions[:, i] = est.predict(X)
+        self.stacking_estimator.fit(predictions, y)
+
+    def predict(self, X):
+        predictions = np.zeros((len(X), len(self.estimator_list)))
+        for i, est in enumerate(self.estimator_list):
+            predictions[:, i] = est.predict(X)
+        return self.stacking_estimator.predict(predictions)
+
 
 class EnsembleSelection:
     def __init__(self, ensemble_size=25):
