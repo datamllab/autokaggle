@@ -20,6 +20,7 @@ from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json,
 from autokaggle.ensemblers import RankedEnsembler, StackingEnsembler
 import hyperopt
 from hyperopt import tpe, hp, fmin, space_eval, Trials, STATUS_OK
+from imblearn.over_sampling import SMOTE, SMOTENC
 
 
 # TODO: Way to change the default hparams
@@ -117,6 +118,7 @@ class TabularEstimator(BaseEstimator):
         if self.objective == 'classification':
             n_classes = len(set(y))
             self.objective = 'binary' if n_classes == 2 else 'multiclass'
+        x, y = self.resample(x, y)
         self.best_estimator_, _ = self.search(x, y)
         self.best_estimator_.fit(x, y)
         self.save_model()
@@ -125,6 +127,10 @@ class TabularEstimator(BaseEstimator):
         y_pred = self.best_estimator_.predict(x, )
         return y_pred
     
+    @staticmethod
+    def resample(X, y):
+        return SMOTE(sampling_strategy='auto').fit_resample(X, y)
+
     @staticmethod
     def subsample(x, y, sample_percent):
         # TODO: Add way to balance the subsample

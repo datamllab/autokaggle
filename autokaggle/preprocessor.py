@@ -247,24 +247,24 @@ class CatEncoder(Primitive):
         return X
 
 
-class TargetEncoder(Primitive):
-    cat_to_int_label = {}
-
-    def _fit(self, X, y=None):
-        for col_index in self.selected:
-            self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
-            for row_index in range(len(X)):
-                key = str(X[row_index, col_index])
-                if key not in self.cat_to_int_label[col_index]:
-                    self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
-        return self
-
-    def _transform(self, X, y=None):
-        for col_index in self.selected:
-            for row_index in range(len(X)):
-                key = str(X[row_index, col_index])
-                X[row_index, col_index] = self.cat_to_int_label[col_index].get(key, np.nan)
-        return X
+# class TargetEncoder(Primitive):
+#     cat_to_int_label = {}
+#
+#     def _fit(self, X, y=None):
+#         for col_index in self.selected:
+#             self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
+#             for row_index in range(len(X)):
+#                 key = str(X[row_index, col_index])
+#                 if key not in self.cat_to_int_label[col_index]:
+#                     self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
+#         return self
+#
+#     def _transform(self, X, y=None):
+#         for col_index in self.selected:
+#             for row_index in range(len(X)):
+#                 key = str(X[row_index, col_index])
+#                 X[row_index, col_index] = self.cat_to_int_label[col_index].get(key, np.nan)
+#         return X
 
 
 class FilterConstant(Primitive):

@@ -283,4 +283,8 @@ if __name__ == "__main__":
                                 9914, 3020, 3524, 3573, 3962]
     ak = BenchmarkingAutoKaggle()
     # ak.run_automation(classification_task_list)
-    ak.evaluate(24)
+    import time
+    t1 = time.time()
+    ak.evaluate(45)
+    t2 = time.time()
+    print(t2-t1)
