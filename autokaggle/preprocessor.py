@@ -3,7 +3,7 @@ from pandas import DataFrame
 import scipy
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, PowerTransformer, KBinsDiscretizer
 from sklearn.base import TransformerMixin
 from sklearn.base import BaseEstimator
 from sklearn.impute import SimpleImputer
@@ -164,32 +164,73 @@ class Primitive(BaseEstimator, TransformerMixin):
         self.selected = selected_columns
         self.selected_type = selected_type
 
-    @abstractmethod
     def fit(self, X, y=None):
+        if not self.selected:
+            return self
+        return self._fit(X, y)
+
+    def transform(self, X, y=None):
+        if not self.selected:
+            return X
+        return self._transform(X, y)
+
+    @abstractmethod
+    def _fit(self, X, y=None):
         pass
 
     @abstractmethod
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         pass
 
 
 class TabScaler(Primitive):
     scaler = None
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         self.scaler = StandardScaler()
         self.scaler.fit(X[:, self.selected], y)
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         X[:, self.selected] = self.scaler.transform(X[:, self.selected])
+        return X
+
+
+class BoxCox(Primitive):
+    transformer = None
+
+    def _fit(self, X, y=None):
+        self.transformer = PowerTransformer()
+        self.transformer.fit(X[:, self.selected], y)
+        return self
+
+    def _transform(self, X, y=None):
+        X[:, self.selected] = self.transformer.transform(X[:, self.selected])
+        return X
+
+
+class Binning(Primitive):
+    binner = None
+
+    def __init__(self, selected_columns=[], selected_type=None, strategy='quantile', encoding='ordinal'):
+        super().__init__(selected_columns, selected_type)
+        self.strategy = strategy
+        self.encoding = encoding
+
+    def _fit(self, X, y=None):
+        self.binner = KBinsDiscretizer(strategy=self.strategy, encode=self.encoding)
+        self.binner.fit(X[:, self.selected], y)
+        return self
+
+    def _transform(self, X, y=None):
+        X[:, self.selected] = self.binner.transform(X[:, self.selected])
         return X
 
 
 class CatEncoder(Primitive):
     cat_to_int_label = {}
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         for col_index in self.selected:
             self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
             for row_index in range(len(X)):
@@ -198,7 +239,27 @@ class CatEncoder(Primitive):
                     self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
+        for col_index in self.selected:
+            for row_index in range(len(X)):
+                key = str(X[row_index, col_index])
+                X[row_index, col_index] = self.cat_to_int_label[col_index].get(key, np.nan)
+        return X
+
+
+class TargetEncoder(Primitive):
+    cat_to_int_label = {}
+
+    def _fit(self, X, y=None):
+        for col_index in self.selected:
+            self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
+            for row_index in range(len(X)):
+                key = str(X[row_index, col_index])
+                if key not in self.cat_to_int_label[col_index]:
+                    self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
+        return self
+
+    def _transform(self, X, y=None):
         for col_index in self.selected:
             for row_index in range(len(X)):
                 key = str(X[row_index, col_index])
@@ -209,20 +270,20 @@ class CatEncoder(Primitive):
 class FilterConstant(Primitive):
     selected_cols = []
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         self.selected_cols = np.where(np.max(X, axis=0) - np.min(X, axis=0) != 0)[0]
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         return X[:, self.selected_cols]
 
 
 class TimeDiff(Primitive):
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         x_time = X[:, self.selected]
         len_cols = x_time.shape[1]
         for i in range(len_cols):
@@ -231,27 +292,40 @@ class TimeDiff(Primitive):
         return X
 
 
+class TimeOffset(Primitive):
+    start_time = None
+
+    def _fit(self, X, y=None):
+        self.start_time = np.min(X[self.selected], axis=0)
+        return self
+
+    def _transform(self, X, y=None):
+        X[self.selected] = X[self.selected] - self.start_time
+        return X
+
+
 class TabPCA(Primitive):
     pca = None
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         self.pca = PCA(n_components=0.99, svd_solver='full')
+        self.pca.fit(X[:, self.selected])
         return self
 
-    def transform(self, X, y=None):
-        x_pca = self.pca.fit_transform(X[:, self.selected])
+    def _transform(self, X, y=None):
+        x_pca = self.pca.transform(X[:, self.selected])
         return np.concatenate([X, x_pca], axis=1)
 
 
 class CatCount(Primitive):
     count_dict = {}
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         for col in self.selected:
             self.count_dict[col] = collections.Counter(X[:, col])
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         for col in self.selected:
             gen_freq = np.vectorize(lambda key: self.count_dict[col][key])
             X[:, col] = gen_freq(X[:, col])
@@ -260,10 +334,10 @@ class CatCount(Primitive):
 
 class LogTransform(Primitive):
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         for col in self.selected:
             X[:, col] = np.square(np.log(X[:, col]))
         return X
@@ -272,12 +346,13 @@ class LogTransform(Primitive):
 class Imputation(Primitive):
     imputer = None
 
-    def fit(self, X, y=None):
-        self.imputer = SimpleImputer(strategy='most_frequent')
+    def _fit(self, X, y=None):
+        # TODO implement most_frequent
+        self.imputer = SimpleImputer(strategy='constant', fill_value=0)
         self.imputer.fit(X)
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         return self.imputer.transform(X)
 
 
@@ -287,7 +362,7 @@ class FeatureFilter(Primitive):
         self.threshold = threshold
         self.drop_columns = []
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         for col in self.selected:
             mu = abs(pearsonr(X[:, col], y)[0])
             if np.isnan(mu):
@@ -296,7 +371,7 @@ class FeatureFilter(Primitive):
                 self.drop_columns.append(col)
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         X = np.delete(X, self.drop_columns, axis=1)
         return X
 
@@ -308,7 +383,7 @@ class FeatureImportance(Primitive):
         self.drop_columns = []
         self.task_type = task_type
 
-    def fit(self, X, y=None):
+    def _fit(self, X, y=None):
         if self.task_type == 'classification':
             n_classes = len(set(y))
             if n_classes == 2:
@@ -333,7 +408,7 @@ class FeatureImportance(Primitive):
         self.drop_columns = np.where(feature_importance < self.threshold)[0]
         return self
 
-    def transform(self, X, y=None):
+    def _transform(self, X, y=None):
         X = np.delete(X, self.drop_columns, axis=1)
         return X
 

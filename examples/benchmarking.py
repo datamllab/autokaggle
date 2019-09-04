@@ -8,8 +8,8 @@ import sklearn.model_selection
 import sklearn.datasets
 from sklearn.metrics import r2_score, roc_auc_score, accuracy_score, f1_score, balanced_accuracy_score,\
 mean_absolute_error, mean_squared_error
-from autosklearn.regression import AutoSklearnRegressor
-from autosklearn.classification import AutoSklearnClassifier
+# from autosklearn.regression import AutoSklearnRegressor
+# from autosklearn.classification import AutoSklearnClassifier
 from autokaggle import *
 from autokaggle.utils import *
 import openml
@@ -142,50 +142,50 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
         print(result)
         return result
 
-    
-class BenchmarkingAutoSklearn(BenchmarkingBase):
-    def get_data_info(self, categorical_indicator):
-        return ['Categorical' if ci else 'Numerical' for ci in categorical_indicator]
-    
-    def evaluate(self, task_id, time_limit=10*60):
-        task_info = ["autosklearn", task_id, time_limit]
-        task = openml.tasks.get_task(task_id)
-        train_indices, test_indices = task.get_train_test_split_indices()
-        dataset = task.get_dataset()
-        X, y, categorical_indicator, attribute_names = dataset.get_data(target=task.target_name, dataset_format='array')
-
-        x_train, y_train = X[train_indices], y[train_indices]
-        x_test, y_test = X[test_indices], y[test_indices]
-
-        # Create feature type list from openml.org indicator
-        feat_type = self.get_data_info(categorical_indicator)
-
-        # Train
-        if task.task_type == 'Supervised Classification':
-            automl = AutoSklearnClassifier(
-                time_left_for_this_task=time_limit,
-                per_run_time_limit=time_limit//10, **kwargs)
-        elif task.task_type == 'Supervised Regression':
-            automl = AutoSklearnRegressor(
-                time_left_for_this_task=time_limit,
-                per_run_time_limit=time_limit//10, **kwargs)
-        else:
-            print("UNSUPPORTED TASK_TYPE")
-            assert(0)
-
-        automl.fit(x_train, y_train, feat_type=feat_type)
-
-        y_hat = automl.predict(x_test)
-        if task.task_type == 'Supervised Classification':
-            is_binary = True if len(task.class_labels) <= 2 else False
-            result = task_info + self.measure_performance_cls(y_test, y_hat, binary=is_binary)
-            self.cls_results.loc[len(self.cls_results)] = result
-        elif task.task_type == 'Supervised Regression':
-            result = task_info + self.measure_performance_rgs(y_test, y_hat)
-            self.rgs_results.loc[len(self.rgs_results)] = result
-        self.results.append(result)
-        print(result)
-        return result
+#
+# class BenchmarkingAutoSklearn(BenchmarkingBase):
+#     def get_data_info(self, categorical_indicator):
+#         return ['Categorical' if ci else 'Numerical' for ci in categorical_indicator]
+#
+#     def evaluate(self, task_id, time_limit=10*60):
+#         task_info = ["autosklearn", task_id, time_limit]
+#         task = openml.tasks.get_task(task_id)
+#         train_indices, test_indices = task.get_train_test_split_indices()
+#         dataset = task.get_dataset()
+#         X, y, categorical_indicator, attribute_names = dataset.get_data(target=task.target_name, dataset_format='array')
+#
+#         x_train, y_train = X[train_indices], y[train_indices]
+#         x_test, y_test = X[test_indices], y[test_indices]
+#
+#         # Create feature type list from openml.org indicator
+#         feat_type = self.get_data_info(categorical_indicator)
+#
+#         # Train
+#         if task.task_type == 'Supervised Classification':
+#             automl = AutoSklearnClassifier(
+#                 time_left_for_this_task=time_limit,
+#                 per_run_time_limit=time_limit//10, **kwargs)
+#         elif task.task_type == 'Supervised Regression':
+#             automl = AutoSklearnRegressor(
+#                 time_left_for_this_task=time_limit,
+#                 per_run_time_limit=time_limit//10, **kwargs)
+#         else:
+#             print("UNSUPPORTED TASK_TYPE")
+#             assert(0)
+#
+#         automl.fit(x_train, y_train, feat_type=feat_type)
+#
+#         y_hat = automl.predict(x_test)
+#         if task.task_type == 'Supervised Classification':
+#             is_binary = True if len(task.class_labels) <= 2 else False
+#             result = task_info + self.measure_performance_cls(y_test, y_hat, binary=is_binary)
+#             self.cls_results.loc[len(self.cls_results)] = result
+#         elif task.task_type == 'Supervised Regression':
+#             result = task_info + self.measure_performance_rgs(y_test, y_hat)
+#             self.rgs_results.loc[len(self.rgs_results)] = result
+#         self.results.append(result)
+#         print(result)
+#         return result
     
 def get_dataset_ids(task_ids):
     if type(task_ids) == list:
@@ -207,6 +207,7 @@ def get_task_info(task_ids):
         task_types.append(task_type)
         dataset_list.append(dataset)
     return dataset_list, task_types
+
 
 def get_dataset_properties(task_ids):
     dataset_list, task_types = get_task_info(task_ids)
@@ -274,3 +275,12 @@ def get_box_plot(data, task_id, metric):
         auto_kaggle.append(med_ak)
     temp = pd.DataFrame(data={"Autokaggle":auto_kaggle, "AutoSklearn":auto_sklearn})
     temp.boxplot()
+
+
+if __name__ == "__main__":
+    regression_task_list = [52948, 2295, 4823, 2285, 4729, 4990, 4958, 2280, 4834, 4850, 4839]
+    classification_task_list = [3021, 45, 2071, 2076, 3638, 3780, 3902, 3945, 3954, 14951, 59, 24, 146230, 31, 10101,
+                                9914, 3020, 3524, 3573, 3962]
+    ak = BenchmarkingAutoKaggle()
+    # ak.run_automation(classification_task_list)
+    ak.evaluate(24)

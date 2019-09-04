@@ -21,6 +21,8 @@ from autokaggle.ensemblers import RankedEnsembler, StackingEnsembler
 import hyperopt
 from hyperopt import tpe, hp, fmin, space_eval, Trials, STATUS_OK
 
+
+# TODO: Way to change the default hparams
 knn_classifier_params = {'n_neighbors': hp.choice('n_neighbors', range(2, 20)),
                          'algorithm': hp.choice('algorithm', ['ball_tree', 'kd_tree', 'brute']),
                          'leaf_size': hp.choice('leaf_size', range(5, 50)),
@@ -104,15 +106,18 @@ class TabularEstimator(BaseEstimator):
         self.time_limit = time_limit
         self.objective = None
         abs_cwd = os.path.split(os.path.abspath(__file__))[0]
-        # self.hparams = read_json(abs_cwd + "/hparam_space/" + self._default_hyperparams)
         self.best_estimator_ = None
-        self.ensemble_models = True
+        self.use_ensembling = False
+        self.hparams = None
+        self.num_estimators_ensemble = 2
+        self.ensemble_strategy = 'ranked_ensembling'
+        self.ensemble_method = 'max_voting'
     
     def fit(self, x, y):
         if self.objective == 'classification':
             n_classes = len(set(y))
             self.objective = 'binary' if n_classes == 2 else 'multiclass'
-        self.search(x, y)
+        self.best_estimator_, _ = self.search(x, y)
         self.best_estimator_.fit(x, y)
         self.save_model()
     
@@ -122,6 +127,7 @@ class TabularEstimator(BaseEstimator):
     
     @staticmethod
     def subsample(x, y, sample_percent):
+        # TODO: Add way to balance the subsample
         # Set small sample for hyper-param search
         if x.shape[0] > 600:
             grid_train_percentage = max(600.0 / x.shape[0], sample_percent)
@@ -132,31 +138,37 @@ class TabularEstimator(BaseEstimator):
         grid_train_x, grid_train_y = x[idx, :], y[idx]
         return grid_train_x, grid_train_y
 
-    def search(self, x, y, search_iter=4, folds=3):
-        grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=0.1)
+    def search(self, x, y, search_iter=4, folds=3, sample_percent=0.1):
+        grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=sample_percent)
         score_metric, skf = self.get_skf(folds)
 
         def objective_func(args):
             clf = args['model'](**args['param'])
-            loss = cross_val_score(clf, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
-            print("CV Score:", loss)
-            print("\n=================")
-            return {'loss': 1 - loss, 'status': STATUS_OK, 'space': args}
+            eval_score = cross_val_score(clf, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
+            if self.verbose:
+                print("CV Score:", eval_score)
+                print("\n=================")
+            return {'loss': 1 - eval_score, 'status': STATUS_OK, 'space': args}
 
         trials = Trials()
         best = fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials, max_evals=search_iter)
-        if self.ensemble_models:
+        if self.use_ensembling:
             best_trials = sorted(trials.results, key=lambda k: k['loss'], reverse=False)
             estimator_list = []
-            for i in range(2):
+            for i in range(self.num_estimators_ensemble):
                 model_params = best_trials[i]['space']
                 est = model_params['model'](**model_params['param'])
                 estimator_list.append(est)
-            # self.best_estimator_ = RankedEnsembler(estimator_list, ensemble_method='max_voting')
-            self.best_estimator_ = StackingEnsembler(estimator_list, objective=self.objective)
+            if self.ensemble_strategy == 'ranked_ensembling':
+                best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.ensemble_method)
+            elif self.ensemble_strategy == 'stacking':
+                best_estimator_ = StackingEnsembler(estimator_list, objective=self.objective)
+            else:
+                best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.ensemble_method)
         else:
             opt = space_eval(self.hparams, best)
-            self.best_estimator_ = opt['model'](**opt['param'])
+            best_estimator_ = opt['model'](**opt['param'])
+        return best_estimator_, trials
             
     @abstractmethod
     def save_model(self):
@@ -174,6 +186,7 @@ class Classifier(TabularEstimator):
     def __init__(self, path=None, verbose=True, time_limit=None):
         super().__init__(path, verbose, time_limit)
         self.objective = 'classification'
+        # TODO: add choice to the set of estimators
         self.hparams = hp.choice('classifier', [
             {'model': KNeighborsClassifier,
              'param': knn_classifier_params
@@ -209,6 +222,7 @@ class Regressor(TabularEstimator):
     def __init__(self, path=None, verbose=True, time_limit=None):
         super().__init__(path, verbose, time_limit)
         self.objective = 'regression'
+        # TODO: add choice to the set of estimators
         self.hparams = hp.choice('regressor', [
             {'model': ExtraTreesRegressor,
              'param': extra_trees_regressor_params
@@ -229,16 +243,4 @@ class Regressor(TabularEstimator):
 
     def get_skf(self, folds):
         return 'neg_mean_squared_error', KFold(n_splits=folds, shuffle=True, random_state=1001)
-    
-    
-class LGBMMixIn:
-    def save_model(self):
-        self.best_estimator_.booster_.save_model(self.save_filename)
-            
-            
-class SklearnMixIn:
-    def save_model(self):
-        dump(self.best_estimator_, self.save_filename)
-        
-    def load_model(self):
-        self.best_estimator_ = load(self.save_filename)
+
