@@ -14,6 +14,8 @@ from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error
 from joblib import dump, load
 from scipy import stats
 from lightgbm import LGBMClassifier, LGBMRegressor
+import collections
+from sklearn.model_selection import RandomizedSearchCV, cross_val_score
 
 
 class RankedEnsembler:
@@ -73,52 +75,59 @@ class StackingEnsembler:
 
 
 class EnsembleSelection:
-    def __init__(self, ensemble_size=25):
-        self.ensemble_size = ensemble_size
-        
-    def fit(self, predictions, y_true):
+    indices_ = None
+    weights_ = None
+
+    def __init__(self, estimator_list, objective, ensemble_size=25):
+        self.estimator_list = estimator_list
+        self.objective = objective
+        self.indices_, self.weights_ = [], []
+        self.ensemble_size = min(len(estimator_list), ensemble_size)
+        if self.objective == 'regression':
+            self.score_metric = 'neg_mean_squared_error'
+            self.skf = KFold(n_splits=3, shuffle=True, random_state=1001)
+        else:
+            self.score_metric = 'neg_mean_squared_error'
+            self.skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=1001)
+
+    def fit(self, X, y_true):
         """Rich Caruana's ensemble selection method. (fast version)"""
         ensemble = []
         trajectory = []
         order = []
 
         for i in range(self.ensemble_size):
-            scores = np.zeros((len(predictions)))
+            scores = np.zeros((len(self.estimator_list)))
             s = len(ensemble)
             if s == 0:
-                weighted_ensemble_prediction = np.zeros(predictions[0].shape)
+                weighted_ensemble_prediction = np.zeros(len(self.estimator_list))
             else:
                 # Memory-efficient averaging!
                 ensemble_prediction = np.zeros(ensemble[0].shape)
-                for pred in ensemble:
-                    ensemble_prediction += pred
+                for est in ensemble:
+                    ensemble_prediction += est
                 ensemble_prediction /= s
 
-                weighted_ensemble_prediction = (s / float(s + 1)) * \
-                                               ensemble_prediction
+                weighted_ensemble_prediction = (s / float(s + 1)) * ensemble_prediction
             fant_ensemble_prediction = np.zeros(weighted_ensemble_prediction.shape)
-            for j, pred in enumerate(predictions):
+            for j, est in enumerate(self.estimator_list):
                 fant_ensemble_prediction[:,:] = weighted_ensemble_prediction + \
-                                             (1. / float(s + 1)) * pred
-                scores[j] = calculate_score(
-                    solution=labels,
-                    prediction=fant_ensemble_prediction,
-                    task_type=self.task_type,
-                    metric=self.metric,
-                    all_scoring_functions=False)
+                                             (1. / float(s + 1)) * est
+                scores[j] = cross_val_score(self.estimator_list[j], X, y_true, scoring=self.score_metric,
+                                            cv=self.skf).mean()
 
             all_best = np.argwhere(scores == np.nanmin(scores)).flatten()
             best = np.random.RandomState.choice(all_best)
-            ensemble.append(predictions[best])
+            ensemble.append(self.estimator_list[best])
             trajectory.append(scores[best])
             order.append(best)
 
             # Handle special case
-            if len(predictions) == 1:
+            if len(self.estimator_list) == 1:
                 break
 
         self.indices_ = order
-        ensemble_members = Counter(self.indices_).most_common()
+        ensemble_members = collections.Counter(self.indices_)
         weights = np.zeros((self.ensemble_size,), dtype=float)
         for ensemble_member in ensemble_members:
             weight = float(ensemble_member[1]) / self.ensemble_size
@@ -128,7 +137,6 @@ class EnsembleSelection:
             weights = weights / np.sum(weights)
 
         self.weights_ = weights
-        self._calculate_weights()
     
-    def predict(self, predictions):
-        return np.average(predictions, axis=1, weights=self.weights_)
+    def predict(self, X):
+        return np.average(X, axis=1, weights=self.weights_)
