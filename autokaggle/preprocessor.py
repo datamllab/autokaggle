@@ -1,6 +1,8 @@
 import numpy as np
-from pandas import DataFrame
+import pandas as pd
 import scipy
+import math
+import itertools
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, PowerTransformer, KBinsDiscretizer
@@ -70,6 +72,9 @@ class TabularPreprocessor:
         self.cat_col = list(np.where(self.data_info == 'CAT')[0])
         self.num_col = list(np.where(self.data_info == 'NUM')[0])
         self.time_col = list(np.where(self.data_info == 'TIME')[0])
+        self.cat_col = [str(i) for i in self.cat_col]
+        self.num_col = [str(i) for i in self.num_col]
+        self.time_col = [str(i) for i in self.time_col]
 
         print('#TIME features: {}'.format(self.n_time))
         print('#NUM features: {}'.format(self.n_num))
@@ -78,12 +83,21 @@ class TabularPreprocessor:
         # Convert sparse to dense if needed
         raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
 
+        # To pandas
+        raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
+
         self.pipeline = Pipeline([
-            ('label_encoder', CatEncoder(selected_columns=self.cat_col)),
+            # ('cat_num_encoder', CatNumEncoder(selected_columns=self.cat_col, selected_num=self.num_col)),
+            ('cat_encoder', TargetEncoder(selected_columns=self.cat_col)),
+            # ('cat_cat_encoder', CatCatEncoder(selected_columns=self.cat_col)),
             ('imputer', Imputation(selected_columns=self.cat_col + self.num_col + self.time_col)),
             ('scaler', TabScaler(selected_columns=self.num_col)),
+            ('boxcox', BoxCox(selected_columns=self.num_col)),
+            ('binning', Binning(selected_columns=self.num_col)),
+            ('log_square', LogTransform(selected_columns=self.num_col)),
             ('pca', TabPCA(selected_columns=self.num_col)),
             ('time_diff', TimeDiff(selected_columns=self.time_col)),
+            ('time_offset', TimeOffset(selected_columns=self.time_col)),
             ('filter', FilterConstant(selected_columns=self.time_col + self.num_col + self.cat_col)),
             ('pearson_corr', FeatureFilter(selected_columns=self.time_col + self.num_col + self.cat_col)),
             ('lgbm_feat_selection', FeatureImportance(selected_columns=self.time_col + self.num_col + self.cat_col)),
@@ -114,7 +128,10 @@ class TabularPreprocessor:
 
         # Convert sparse to dense if needed
         raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
-        return self.pipeline.transform(raw_x)
+
+        # To pandas
+        raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
+        return self.pipeline.transform(raw_x).values
 
     @staticmethod
     def extract_data_info(raw_x):
@@ -165,6 +182,7 @@ class Primitive(BaseEstimator, TransformerMixin):
         self.selected_type = selected_type
 
     def fit(self, X, y=None):
+        self.selected = list(set(X.columns)  & set(self.selected))
         if not self.selected:
             return self
         return self._fit(X, y)
@@ -188,11 +206,11 @@ class TabScaler(Primitive):
 
     def _fit(self, X, y=None):
         self.scaler = StandardScaler()
-        self.scaler.fit(X[:, self.selected], y)
+        self.scaler.fit(X[self.selected], y)
         return self
 
     def _transform(self, X, y=None):
-        X[:, self.selected] = self.scaler.transform(X[:, self.selected])
+        X[self.selected] = self.scaler.transform(X[self.selected])
         return X
 
 
@@ -201,11 +219,11 @@ class BoxCox(Primitive):
 
     def _fit(self, X, y=None):
         self.transformer = PowerTransformer()
-        self.transformer.fit(X[:, self.selected], y)
+        self.transformer.fit(X[self.selected], y)
         return self
 
     def _transform(self, X, y=None):
-        X[:, self.selected] = self.transformer.transform(X[:, self.selected])
+        X[self.selected] = self.transformer.transform(X[self.selected])
         return X
 
 
@@ -219,18 +237,19 @@ class Binning(Primitive):
 
     def _fit(self, X, y=None):
         self.binner = KBinsDiscretizer(strategy=self.strategy, encode=self.encoding)
-        self.binner.fit(X[:, self.selected], y)
+        self.binner.fit(X[self.selected], y)
         return self
 
     def _transform(self, X, y=None):
-        X[:, self.selected] = self.binner.transform(X[:, self.selected])
+        X[self.selected] = self.binner.transform(X[self.selected])
         return X
 
 
 class CatEncoder(Primitive):
-    cat_to_int_label = {}
+    cat_to_int_label = None
 
     def _fit(self, X, y=None):
+        self.cat_to_int_label = {}
         for col_index in self.selected:
             self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
             for row_index in range(len(X)):
@@ -247,35 +266,141 @@ class CatEncoder(Primitive):
         return X
 
 
-# class TargetEncoder(Primitive):
-#     cat_to_int_label = {}
-#
-#     def _fit(self, X, y=None):
-#         for col_index in self.selected:
-#             self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
-#             for row_index in range(len(X)):
-#                 key = str(X[row_index, col_index])
-#                 if key not in self.cat_to_int_label[col_index]:
-#                     self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
-#         return self
-#
-#     def _transform(self, X, y=None):
-#         for col_index in self.selected:
-#             for row_index in range(len(X)):
-#                 key = str(X[row_index, col_index])
-#                 X[row_index, col_index] = self.cat_to_int_label[col_index].get(key, np.nan)
-#         return X
+class TargetEncoder(Primitive):
+    target_encoding_map = None
 
+    @staticmethod
+    def calc_smooth_mean(df, by, on, alpha=5):
+        # Compute the global mean
+        mean = df[on].mean()
 
-class FilterConstant(Primitive):
-    selected_cols = []
+        # Compute the number of values and the mean of each group
+        agg = df.groupby(by)[on].agg(['count', 'mean'])
+        counts = agg['count']
+        means = agg['mean']
+
+        # Compute the "smoothed" means
+        smooth = (counts * means + alpha * mean) / (counts + alpha)
+        return smooth
 
     def _fit(self, X, y=None):
-        self.selected_cols = np.where(np.max(X, axis=0) - np.min(X, axis=0) != 0)[0]
+        self.target_encoding_map = {}
+        X['target'] = y
+        for col in self.selected:
+            self.target_encoding_map[col] = self.calc_smooth_mean(X, col, 'target', alpha=5)
+        X.drop('target', axis=1, inplace=True)
         return self
 
     def _transform(self, X, y=None):
-        return X[:, self.selected_cols]
+        for col in self.selected:
+            X[col] = X[col].map(self.target_encoding_map[col])
+        return X
+
+
+class CatCatEncoder(Primitive):
+    def __init__(self, selected_columns=[], selected_type=None, strategy='count'):
+        super().__init__(selected_columns, selected_type)
+        self.strategy = strategy
+        self.cat_cat_map = {}
+
+    @staticmethod
+    def cat_cat_count(df, col1, col2, strategy='count'):
+        if strategy == 'count':
+            mapping = df.groupby([col1])[col2].count()
+        elif strategy == 'nunique':
+            mapping = df.groupby([col1])[col2].nunique()
+        else:
+            mapping = df.groupby([col1])[col2].count() // df.groupby([col1])[col2].nunique()
+        return mapping
+
+    def _fit(self, X, y=None):
+        for col1, col2 in itertools.combinations(self.selected, 2):
+            self.cat_cat_map[col1 + '_cross_' + col2] = self.cat_cat_count(X, col1, col2, self.strategy)
+        return self
+
+    def _transform(self, X, y=None):
+        for col1, col2 in itertools.combinations(self.selected, 2):
+            if col1 + '_cross_' + col2 in self.cat_cat_map:
+                X[col1 + '_cross_' + col2] = X[col1].map(self.cat_cat_map[col1 + '_cross_' + col2])
+        return X
+
+
+class CatNumEncoder(Primitive):
+    def __init__(self, selected_columns=[], selected_type=None, selected_num=[], strategy='mean'):
+        super().__init__(selected_columns, selected_type)
+        self.selected_num = selected_num
+        self.strategy = strategy
+        self.cat_num_map = {}
+
+    @staticmethod
+    def cat_num_interaction(df, col1, col2, method='mean'):
+        if method == 'mean':
+            mapping = df.groupby([col1])[col2].mean()
+        elif method == 'std':
+            mapping = df.groupby([col1])[col2].std()
+        elif method == 'max':
+            mapping = df.groupby([col1])[col2].max()
+        elif method == 'min':
+            mapping = df.groupby([col1])[col2].min()
+        else:
+            mapping = df.groupby([col1])[col2].mean()
+
+        return mapping
+
+    def _fit(self, X, y=None):
+        for col1 in self.selected:
+            for col2 in self.selected_num:
+                self.cat_num_map[col1 + '_cross_' + col2] = self.cat_num_interaction(X, col1, col2, self.strategy)
+        return self
+
+    def _transform(self, X, y=None):
+        for col1 in self.selected:
+            for col2 in self.selected_num:
+                if col1 + '_cross_' + col2 in self.cat_num_map:
+                    X[col1 + '_cross_' + col2] = X[col1].map(self.cat_num_map[col1 + '_cross_' + col2])
+        return X
+
+
+class CatBinEncoder(Primitive):
+    def __init__(self, selected_columns=[], selected_type=None, selected_bin=[], strategy='percent_true'):
+        super().__init__(selected_columns, selected_type)
+        self.selected_bin = selected_bin
+        self.strategy = strategy
+        self.cat_bin_map = {}
+
+    @staticmethod
+    def cat_bin_interaction(df, col1, col2, strategy='percent_true'):
+        if strategy == 'percent_true':
+            mapping = df.groupby([col1])[col2].mean()
+        elif strategy == 'count':
+            mapping = df.groupby([col1])[col2].count()
+        else:
+            mapping = df.groupby([col1])[col2].mean()
+        return mapping
+
+    def _fit(self, X, y=None):
+        for col1 in self.selected:
+            for col2 in self.selected_bin:
+                self.cat_bin_map[col1 + '_cross_' + col2] = self.cat_bin_interaction(X, col1, col2, self.strategy)
+        return self
+
+    def _transform(self, X, y=None):
+        for col1 in self.selected:
+            for col2 in self.selected_bin:
+                if col1 + '_cross_' + col2 in self.cat_bin_map:
+                    X[col1 + '_cross_' + col2] = X[col1].map(self.cat_bin_map[col1 + '_cross_' + col2])
+        return X
+
+
+class FilterConstant(Primitive):
+    selected_cols = None
+
+    def _fit(self, X, y=None):
+        self.selected_cols = X.columns[(X.max(axis=0) - X.min(axis=0) != 0)].tolist()
+        return self
+
+    def _transform(self, X, y=None):
+        return X[self.selected_cols]
 
 
 class TimeDiff(Primitive):
@@ -284,11 +409,8 @@ class TimeDiff(Primitive):
         return self
 
     def _transform(self, X, y=None):
-        x_time = X[:, self.selected]
-        len_cols = x_time.shape[1]
-        for i in range(len_cols):
-            for j in range(i + 1, len_cols):
-                X = np.append(X, np.expand_dims(x_time[:, i] - x_time[:, j], 1), 1)
+        for a, b in itertools.combinations(self.selected, 2):
+            X[a + '-' + b] = X[a] - X[b]
         return X
 
 
@@ -296,7 +418,7 @@ class TimeOffset(Primitive):
     start_time = None
 
     def _fit(self, X, y=None):
-        self.start_time = np.min(X[self.selected], axis=0)
+        self.start_time = X[self.selected].min(axis=0)
         return self
 
     def _transform(self, X, y=None):
@@ -309,26 +431,27 @@ class TabPCA(Primitive):
 
     def _fit(self, X, y=None):
         self.pca = PCA(n_components=0.99, svd_solver='full')
-        self.pca.fit(X[:, self.selected])
+        self.pca.fit(X[self.selected])
         return self
 
     def _transform(self, X, y=None):
-        x_pca = self.pca.transform(X[:, self.selected])
-        return np.concatenate([X, x_pca], axis=1)
+        x_pca = self.pca.transform(X[self.selected])
+        x_pca = pd.DataFrame(x_pca, columns=['pca_' + str(i) for i in range(x_pca.shape[1])])
+        return pd.concat([X, x_pca], axis=1)
 
 
 class CatCount(Primitive):
-    count_dict = {}
+    count_dict = None
 
     def _fit(self, X, y=None):
+        self.count_dict = {}
         for col in self.selected:
-            self.count_dict[col] = collections.Counter(X[:, col])
+            self.count_dict[col] = collections.Counter(X[col])
         return self
 
     def _transform(self, X, y=None):
         for col in self.selected:
-            gen_freq = np.vectorize(lambda key: self.count_dict[col][key])
-            X[:, col] = gen_freq(X[:, col])
+            X[col] = X[col].apply(lambda key: self.count_dict[col][key])
         return X
 
 
@@ -339,21 +462,24 @@ class LogTransform(Primitive):
 
     def _transform(self, X, y=None):
         for col in self.selected:
-            X[:, col] = np.square(np.log(X[:, col]))
+            X[col] = np.square(np.log(1 + X[col]))
         return X
 
 
 class Imputation(Primitive):
-    imputer = None
+    impute_dict = None
 
     def _fit(self, X, y=None):
-        # TODO implement most_frequent
-        self.imputer = SimpleImputer(strategy='constant', fill_value=0)
-        self.imputer.fit(X)
+        self.impute_dict = {}
+        for col in self.selected:
+            value_counts = X[col].value_counts()
+            self.impute_dict[col] = value_counts.idxmax() if not value_counts.empty else 0
         return self
 
     def _transform(self, X, y=None):
-        return self.imputer.transform(X)
+        for col in self.selected:
+            X[col] = X[col].fillna(self.impute_dict[col])
+        return X
 
 
 class FeatureFilter(Primitive):
@@ -364,7 +490,7 @@ class FeatureFilter(Primitive):
 
     def _fit(self, X, y=None):
         for col in self.selected:
-            mu = abs(pearsonr(X[:, col], y)[0])
+            mu = abs(pearsonr(X[col], y)[0])
             if np.isnan(mu):
                 mu = 0
             if mu < self.threshold:
@@ -372,7 +498,7 @@ class FeatureFilter(Primitive):
         return self
 
     def _transform(self, X, y=None):
-        X = np.delete(X, self.drop_columns, axis=1)
+        X.drop(columns=self.drop_columns, inplace=True)
         return X
 
 
@@ -397,7 +523,8 @@ class FeatureImportance(Primitive):
                                            n_jobs=1,
                                            num_class=n_classes,
                                            objective='multiclass')
-        elif self.task_type == 'regression':
+        else:
+            # self.task_type == 'regression'
             estimator = LGBMRegressor(silent=False,
                                       verbose=-1,
                                       n_jobs=1,
@@ -405,11 +532,11 @@ class FeatureImportance(Primitive):
         estimator.fit(X, y)
         feature_importance = estimator.feature_importances_
         feature_importance = feature_importance/feature_importance.mean()
-        self.drop_columns = np.where(feature_importance < self.threshold)[0]
+        self.drop_columns = X.columns[np.where(feature_importance < self.threshold)[0]]
         return self
 
     def _transform(self, X, y=None):
-        X = np.delete(X, self.drop_columns, axis=1)
+        X.drop(columns=self.drop_columns, inplace=True)
         return X
 
 
