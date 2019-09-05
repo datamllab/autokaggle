@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import scipy
-import math
 import itertools
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
@@ -17,10 +16,11 @@ LEVEL_HIGH = 32
 
 
 class TabularPreprocessor:
-    def __init__(self):
+    def __init__(self, verbose=True):
         """
         Initialization function for tabular preprocessor.
         """
+        self.verbose = verbose
         self.num_cat_pair = {}
 
         self.total_samples = 0
@@ -61,30 +61,13 @@ class TabularPreprocessor:
         self.budget = time_limit
         # Extract or read data info
         self.data_info = data_info if data_info is not None else self.extract_data_info(raw_x)
-        print('DATA_INFO: {}'.format(self.data_info))
 
         # Set the meta info for each data type
-        self.n_time = sum(self.data_info == 'TIME')
-        self.n_num = sum(self.data_info == 'NUM')
-        self.n_cat = sum(self.data_info == 'CAT')
-        self.total_samples = raw_x.shape[0]
+        self.cat_col = [str(i) for i in np.where(self.data_info == 'CAT')[0]]
+        self.num_col = [str(i) for i in np.where(self.data_info == 'NUM')[0]]
+        self.time_col = [str(i) for i in np.where(self.data_info == 'TIME')[0]]
 
-        self.cat_col = list(np.where(self.data_info == 'CAT')[0])
-        self.num_col = list(np.where(self.data_info == 'NUM')[0])
-        self.time_col = list(np.where(self.data_info == 'TIME')[0])
-        self.cat_col = [str(i) for i in self.cat_col]
-        self.num_col = [str(i) for i in self.num_col]
-        self.time_col = [str(i) for i in self.time_col]
-
-        print('#TIME features: {}'.format(self.n_time))
-        print('#NUM features: {}'.format(self.n_num))
-        print('#CAT features: {}'.format(self.n_cat))
-        
-        # Convert sparse to dense if needed
-        raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
-
-        # To pandas
-        raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
+        data = TabularData(raw_x, self.data_info, self.verbose)
 
         self.pipeline = Pipeline([
             # ('cat_num_encoder', CatNumEncoder(selected_columns=self.cat_col, selected_num=self.num_col)),
@@ -102,7 +85,7 @@ class TabularPreprocessor:
             ('pearson_corr', FeatureFilter(selected_columns=self.time_col + self.num_col + self.cat_col)),
             ('lgbm_feat_selection', FeatureImportance(selected_columns=self.time_col + self.num_col + self.cat_col)),
         ])
-        self.pipeline.fit(raw_x, y)
+        self.pipeline.fit(data.X, y)
 
         return self
 
@@ -126,12 +109,8 @@ class TabularPreprocessor:
         else:
             self.budget = time_limit
 
-        # Convert sparse to dense if needed
-        raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
-
-        # To pandas
-        raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
-        return self.pipeline.transform(raw_x).values
+        data = TabularData(raw_x, self.data_info, self.verbose)
+        return self.pipeline.transform(data.X).values
 
     @staticmethod
     def extract_data_info(raw_x):
@@ -153,27 +132,33 @@ class TabularPreprocessor:
 
 
 class TabularData:
-    def __init__(self, data, data_info):
-        self.data = data
+    def __init__(self, raw_x, data_info, verbose=True):
         self.data_info = data_info
+        self.verbose = verbose
+        self.cat_col = [str(i) for i in np.where(self.data_info == 'CAT')[0]]
+        self.num_col = [str(i) for i in np.where(self.data_info == 'NUM')[0]]
+        self.time_col = [str(i) for i in np.where(self.data_info == 'TIME')[0]]
 
-        self.total_samples = 0
+        self.n_time = len(self.time_col)
+        self.n_num = len(self.num_col)
+        self.n_cat = len(self.cat_col)
+        self.total_samples = raw_x.shape[0]
 
-        self.cat_to_int_label = {}
-        self.n_first_batch_keys = {}
-        self.high_level_cat_keys = []
+        # Convert sparse to dense if needed
+        raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
 
-        self.num_cat_pair = {}
-        self.feature_add_high_cat = 0
-        self.feature_add_cat_num = 10
-        self.feature_add_cat_cat = 10
-        self.order_num_cat_pair = {}
+        # To pandas
+        if type(raw_x) != pd.DataFrame:
+            raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
 
-        self.selected_cols = None
+        self.X = raw_x
+        self.cat_cardinality = {}
 
-        self.n_time = None
-        self.n_num = None
-        self.n_cat = None
+        if self.verbose:
+            print('DATA_INFO: {}'.format(self.data_info))
+            print('#TIME features: {}'.format(self.n_time))
+            print('#NUM features: {}'.format(self.n_num))
+            print('#CAT features: {}'.format(self.n_cat))
 
 
 class Primitive(BaseEstimator, TransformerMixin):
@@ -181,23 +166,23 @@ class Primitive(BaseEstimator, TransformerMixin):
         self.selected = selected_columns
         self.selected_type = selected_type
 
-    def fit(self, X, y=None):
-        self.selected = list(set(X.columns)  & set(self.selected))
+    def fit(self, data, y=None):
+        self.selected = list(set(data.columns) & set(self.selected))
         if not self.selected:
             return self
-        return self._fit(X, y)
+        return self._fit(data, y)
 
-    def transform(self, X, y=None):
+    def transform(self, data, y=None):
         if not self.selected:
-            return X
-        return self._transform(X, y)
+            return data
+        return self._transform(data, y)
 
     @abstractmethod
-    def _fit(self, X, y=None):
+    def _fit(self, data, y=None):
         pass
 
     @abstractmethod
-    def _transform(self, X, y=None):
+    def _transform(self, data, y=None):
         pass
 
 
