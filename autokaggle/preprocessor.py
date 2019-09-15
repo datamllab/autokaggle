@@ -22,14 +22,9 @@ class TabularPreprocessor:
         """
         self.verbose = verbose
 
-        self.total_samples = 0
-        self.n_first_batch_keys = {}
-        self.high_level_cat_keys = []
-
         self.feature_add_high_cat = 0
         self.feature_add_cat_num = 10
         self.feature_add_cat_cat = 10
-        self.order_num_cat_pair = {}
 
         self.budget = None
         self.data_info = None
@@ -56,21 +51,21 @@ class TabularPreprocessor:
 
         self.pipeline = Pipeline([
             ('imputer', Imputation(selected_type='ALL', operation='upd')),
-            ('cat_num_encoder', CatNumEncoder(selected_type1='CAT', selected_type2='NUM')),
-            ('cat_num_encoder', CatCatEncoder(selected_type1='CAT', selected_type2='CAT')),
-            ('target_encoder', TargetEncoder(selected_type='CAT', operation='add')),
-            ('count_encoder', CatCount(selected_type='CAT', operation='add')),
-            ('label_encoder', CatEncoder(selected_type='CAT', operation='add')),
-            ('boxcox', BoxCox(selected_type='NUM', operation='upd')),
-            ('log_square', LogTransform(selected_type='NUM', operation='upd')),
+            # ('cat_num_encoder', CatNumEncoder(selected_type1='CAT', selected_type2='NUM')),
+            # ('cat_num_encoder', CatCatEncoder(selected_type1='CAT', selected_type2='CAT')),
+            # ('target_encoder', TargetEncoder(selected_type='CAT', operation='add')),
+            ('count_encoder', CatCount(selected_type='CAT', operation='upd')),
+            # ('label_encoder', CatEncoder(selected_type='CAT', operation='add')),
+            # ('boxcox', BoxCox(selected_type='NUM', operation='upd')),
+            # ('log_square', LogTransform(selected_type='NUM', operation='upd')),
             ('scaler', TabScaler(selected_type='NUM', operation='upd')),
-            ('binning', Binning(selected_type='NUM', operation='add')),
-            ('pca', TabPCA(selected_type='NUM', operation='add')),
-            ('time_diff', TimeDiff(selected_type='TIME', operation='upd')),
-            ('time_offset', TimeOffset(selected_type='TIME', operation='upd')),
+            # ('binning', Binning(selected_type='NUM', operation='upd')),
+            # ('pca', TabPCA(selected_type='NUM', operation='add')),
+            # ('time_diff', TimeDiff(selected_type='TIME', operation='add')),
+            # ('time_offset', TimeOffset(selected_type='TIME', operation='upd')),
             ('filter', FilterConstant(selected_type='ALL', operation='del')),
-            ('pearson_corr', FeatureFilter(selected_type='ALL', operation='del')),
-            ('lgbm_feat_selection', FeatureImportance(selected_type='ALL', operation='del')),
+            # ('pearson_corr', FeatureFilter(selected_type='ALL', operation='del')),
+            # ('lgbm_feat_selection', FeatureImportance(selected_type='ALL', operation='del')),
         ])
         self.pipeline.fit(data, y)
 
@@ -97,7 +92,9 @@ class TabularPreprocessor:
             self.budget = time_limit
 
         data = TabularData(raw_x, self.data_info, self.verbose)
-        return self.pipeline.transform(data).X.values
+        a = self.pipeline.transform(data).X
+        print(a.head())
+        return a.values
 
     @staticmethod
     def extract_data_info(raw_x):
@@ -142,7 +139,6 @@ class TabularData:
             raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
 
         self.X = raw_x
-        self.cat_cardinality = {}
         self.update_cat_cardinality()
 
         if self.verbose:
@@ -152,8 +148,6 @@ class TabularData:
             print('#CAT features: {}'.format(self.n_cat))
 
     def update_type(self, columns, new_type):
-        if not new_type:
-            return
         for c in columns:
             self.data_info[c] = new_type
 
@@ -161,18 +155,28 @@ class TabularData:
         for c in columns:
             _ = self.data_info.pop(c, 0)
 
-    def update(self, operation, columns, x_tr, new_type=None):
+    def rename_cols(self, key):
+        def rename_fn(col_name):
+            col_name += '_' + key
+            while col_name in self.X.columns:
+                col_name += '_' + key
+            return col_name
+        return rename_fn
+
+    def update(self, operation, columns, x_tr, new_type=None, key=''):
         if operation == 'upd':
             if x_tr is not None:
                 self.X[columns] = x_tr
-            self.update_type(columns, new_type)
+            if new_type is not None:
+                self.update_type(columns, new_type)
         elif operation == 'add':
             if x_tr is not None:
+                x_tr = x_tr.rename(columns=self.rename_cols(key))
                 self.X = pd.concat([self.X, x_tr], axis=1)
                 self.update_type(x_tr.columns, new_type)
         elif operation == 'del':
             if len(columns) != 0:
-                self.X.drop(columns, inplace=True)
+                self.X.drop(columns=columns, inplace=True)
                 self.delete_type(columns)
         else:
             print("invalid operation")
@@ -187,6 +191,8 @@ class TabularData:
         self.n_cat = len(self.cat_col)
 
     def update_cat_cardinality(self):
+        if not self.cat_cardinality:
+            self.cat_cardinality = {}
         for c in self.cat_col:
             self.cat_cardinality[c] = len(set(self.X[c]))
 
@@ -208,13 +214,22 @@ class TabularData:
 class Primitive(BaseEstimator, TransformerMixin):
     selected = None
     drop_columns = None
+    options = None
+    supported_ops = ('add', 'upd', 'del')
 
     def __init__(self, selected_type=None, operation='upd', **kwargs):
         self.selected_type = selected_type
         self.operation = operation
+        self.init_vars(**kwargs)
+
+    def init_vars(self, **kwargs):
+        self.options = kwargs
 
     def fit(self, data, y=None):
         self.selected = data.select_columns(self.selected_type)
+        if self.operation not in self.supported_ops:
+            print("Operation {} not supported for {}".format(self.operation, self.__class__.__name__))
+            self.selected = None
         if not self.selected:
             return self
         return self._fit(data, y)
@@ -234,15 +249,14 @@ class Primitive(BaseEstimator, TransformerMixin):
 
 
 class PrimitiveHigherOrder(Primitive):
-    def __init__(self, operation='upd', selected_type1=None, selected_type2=None, **kwargs):
-        self.selected_type1 = selected_type1
+    def __init__(self, operation='upd', selected_type=None, selected_type2=None, **kwargs):
+        super().__init__(selected_type, operation, **kwargs)
         self.selected_type2 = selected_type2
-        self.operation = operation
-        self.options = kwargs
 
 
 class TabScaler(Primitive):
     scaler = None
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         self.scaler = StandardScaler()
@@ -257,6 +271,7 @@ class TabScaler(Primitive):
 
 class BoxCox(Primitive):
     transformer = None
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         self.transformer = PowerTransformer()
@@ -271,9 +286,11 @@ class BoxCox(Primitive):
 
 class Binning(Primitive):
     binner = None
+    strategy = None
+    encoding = None
+    supported_ops = ('add', 'upd')
 
-    def __init__(self, selected_type=None, operation='upd', strategy='quantile', encoding='ordinal'):
-        super().__init__(selected_type, operation)
+    def init_vars(self, strategy='quantile', encoding='ordinal'):
         self.strategy = strategy
         self.encoding = encoding
 
@@ -291,6 +308,7 @@ class Binning(Primitive):
 
 class CatEncoder(Primitive):
     cat_to_int_label = None
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         X = data.X
@@ -314,6 +332,7 @@ class CatEncoder(Primitive):
 
 class TargetEncoder(Primitive):
     target_encoding_map = None
+    supported_ops = ('add', 'upd')
 
     @staticmethod
     def calc_smooth_mean(df, by, on, alpha=5):
@@ -327,7 +346,7 @@ class TargetEncoder(Primitive):
 
         # Compute the "smoothed" means
         smooth = (counts * means + alpha * mean) / (counts + alpha)
-        return smooth
+        return smooth, mean
 
     def _fit(self, data, y=None):
         X = data.X
@@ -341,12 +360,13 @@ class TargetEncoder(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[col] = data.X[col].map(self.target_encoding_map[col])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+            x_tr[col] = data.X[col].map(self.target_encoding_map[col][0], self.target_encoding_map[col][1])
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.__class__.__name__)
         return data
 
 
 class CatCatEncoder(PrimitiveHigherOrder):
+    supported_ops = ('add', 'upd')
     @staticmethod
     def cat_cat_count(df, col1, col2, strategy='count'):
         if strategy == 'count':
@@ -375,6 +395,8 @@ class CatCatEncoder(PrimitiveHigherOrder):
 
 
 class CatNumEncoder(PrimitiveHigherOrder):
+    supported_ops = ('add', 'upd')
+
     def __init__(self, selected_type=None, selected_num=[], operation='add', strategy='mean'):
         super().__init__(selected_type, operation)
         self.selected_num = selected_num
@@ -415,6 +437,8 @@ class CatNumEncoder(PrimitiveHigherOrder):
 
 
 class CatBinEncoder(PrimitiveHigherOrder):
+    supported_ops = ('add', 'upd')
+
     @staticmethod
     def cat_bin_interaction(df, col1, col2, strategy='percent_true'):
         if strategy == 'percent_true':
@@ -445,9 +469,10 @@ class CatBinEncoder(PrimitiveHigherOrder):
 
 class FilterConstant(Primitive):
     drop_columns = None
+    supported_ops = ('del',)
 
     def _fit(self, data, y=None):
-        X = data.X
+        X = data.X[self.selected]
         self.drop_columns = X.columns[(X.max(axis=0) - X.min(axis=0) == 0)].tolist()
         return self
 
@@ -457,6 +482,7 @@ class FilterConstant(Primitive):
 
 
 class TimeDiff(Primitive):
+    supported_ops = ('add', )
 
     def _fit(self, data, y=None):
         return self
@@ -471,6 +497,7 @@ class TimeDiff(Primitive):
 
 class TimeOffset(Primitive):
     start_time = None
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         self.start_time = data.X[self.selected].min(axis=0)
@@ -485,6 +512,7 @@ class TimeOffset(Primitive):
 
 class TabPCA(Primitive):
     pca = None
+    supported_ops = ('add', )
 
     def _fit(self, data, y=None):
         self.pca = PCA(n_components=0.99, svd_solver='full')
@@ -500,6 +528,7 @@ class TabPCA(Primitive):
 
 class CatCount(Primitive):
     count_dict = None
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         self.count_dict = {}
@@ -517,6 +546,7 @@ class CatCount(Primitive):
 
 class LogTransform(Primitive):
     name_key = 'log_'
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         return self
@@ -531,6 +561,7 @@ class LogTransform(Primitive):
 
 class Imputation(Primitive):
     impute_dict = None
+    supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
         self.impute_dict = {}
@@ -540,15 +571,18 @@ class Imputation(Primitive):
         return self
 
     def _transform(self, data, y=None):
+        x_tr = pd.DataFrame()
         for col in self.selected:
-            data.X[col].fillna(self.impute_dict[col])
-        data.update(self.operation, self.selected, None, new_type='NUM')
+            x_tr[col] = data.X[col].fillna(self.impute_dict[col])
+        data.update(self.operation, self.selected, x_tr, new_type=None)
         return data
 
 
 class FeatureFilter(Primitive):
-    def __init__(self, selected_type=None, operation='del', threshold=0.001):
-        super().__init__(selected_type, operation)
+    threshold = None
+    supported_ops = ('del',)
+
+    def init_vars(self, threshold=0.001):
         self.threshold = threshold
         self.drop_columns = []
 
@@ -567,8 +601,11 @@ class FeatureFilter(Primitive):
 
 
 class FeatureImportance(Primitive):
-    def __init__(self, selected_type=None, operation='del', threshold=0.001, task_type='classification'):
-        super().__init__(selected_type, operation)
+    threshold = None
+    task_type = 'classification'
+    supported_ops = ('del',)
+
+    def init_vars(self, threshold=0.001, task_type='classification'):
         self.threshold = threshold
         self.drop_columns = []
         self.task_type = task_type

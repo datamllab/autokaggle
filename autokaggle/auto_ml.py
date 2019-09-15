@@ -67,13 +67,16 @@ class AutoKaggle(BaseEstimator):
             print("The whole available data is: ")
             print("Real-FIT: dim(X)= [{:d}, {:d}]".format(x.shape[0], x.shape[1]))
 
-    def predict(self, x_test):
+    def predict(self, x_test, predict_proba=False):
         """
         This function should provide predictions of labels on (test) data.
         The function predict eventually can return probabilities or continuous values.
         """
         x_test = self.preprocessor.transform(x_test)
-        y = self.model.predict(x_test, )
+        if predict_proba:
+            y = self.model.predict_proba(x_test, )
+        else:
+            y = self.model.predict(x_test, )
         if y is None:
             raise ValueError("Tabular predictor does not exist")
         return y
