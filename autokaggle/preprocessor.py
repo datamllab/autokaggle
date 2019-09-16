@@ -12,25 +12,20 @@ from sklearn.pipeline import Pipeline
 from abc import abstractmethod
 import collections
 from lightgbm import LGBMClassifier, LGBMRegressor
+from autokaggle.estimators import Config
 LEVEL_HIGH = 32
 
 
 class TabularPreprocessor:
-    def __init__(self, verbose=True):
+    def __init__(self, config):
         """
         Initialization function for tabular preprocessor.
         """
-        self.verbose = verbose
-
-        self.feature_add_high_cat = 0
-        self.feature_add_cat_num = 10
-        self.feature_add_cat_cat = 10
-
-        self.budget = None
         self.data_info = None
         self.pipeline = None
+        self.config = config
 
-    def fit(self, raw_x, y, time_limit, data_info):
+    def fit(self, raw_x, y, data_info):
         """
         This function should train the model parameters.
 
@@ -43,19 +38,18 @@ class TabularPreprocessor:
                      'TIME' for temporal feature, 'NUM' for other numerical feature,
                      and 'CAT' for categorical feature.
         """
-        self.budget = time_limit
         # Extract or read data info
         self.data_info = data_info if data_info is not None else self.extract_data_info(raw_x)
 
-        data = TabularData(raw_x, self.data_info, self.verbose)
+        data = TabularData(raw_x, self.data_info, self.config.verbose)
 
         self.pipeline = Pipeline([
             ('imputer', Imputation(selected_type='ALL', operation='upd')),
             # ('cat_num_encoder', CatNumEncoder(selected_type1='CAT', selected_type2='NUM')),
             # ('cat_num_encoder', CatCatEncoder(selected_type1='CAT', selected_type2='CAT')),
             # ('target_encoder', TargetEncoder(selected_type='CAT', operation='add')),
-            ('count_encoder', CatCount(selected_type='CAT', operation='upd')),
-            # ('label_encoder', CatEncoder(selected_type='CAT', operation='add')),
+            # ('count_encoder', CatCount(selected_type='CAT', operation='upd')),
+            ('label_encoder', CatEncoder(selected_type='CAT', operation='upd')),
             # ('boxcox', BoxCox(selected_type='NUM', operation='upd')),
             # ('log_square', LogTransform(selected_type='NUM', operation='upd')),
             ('scaler', TabScaler(selected_type='NUM', operation='upd')),
@@ -71,29 +65,20 @@ class TabularPreprocessor:
 
         return self
 
-    def transform(self, raw_x, time_limit=None):
+    def transform(self, raw_x):
         """
         This function should train the model parameters.
 
         Args:
             raw_x: a numpy.ndarray instance containing the training/testing data.
-            time_limit: remaining time budget.
         Both inputs X and y are numpy arrays.
         If fit is called multiple times on incremental data (train, test1, test2, etc.)
         you should warm-start your training from the pre-trained model. Past data will
         NOT be available for re-training.
         """
         # Get Meta-Feature
-        if time_limit is None:
-            if self.budget is None:
-                time_limit = 24 * 60 * 60
-                self.budget = time_limit
-        else:
-            self.budget = time_limit
-
-        data = TabularData(raw_x, self.data_info, self.verbose)
+        data = TabularData(raw_x, self.data_info, self.config.verbose)
         a = self.pipeline.transform(data).X
-        print(a.head())
         return a.values
 
     @staticmethod
@@ -308,25 +293,22 @@ class Binning(Primitive):
 
 class CatEncoder(Primitive):
     cat_to_int_label = None
+    unknown_key_dict = None
     supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
-        X = data.X
         self.cat_to_int_label = {}
-        for col_index in self.selected:
-            self.cat_to_int_label[col_index] = self.cat_to_int_label.get(col_index, {})
-            for row_index in range(len(X)):
-                key = str(X[row_index, col_index])
-                if key not in self.cat_to_int_label[col_index]:
-                    self.cat_to_int_label[col_index][key] = len(self.cat_to_int_label[col_index])
+        self.unknown_key_dict = {}
+        for col in self.selected:
+            self.cat_to_int_label[col] = {key: idx for idx, key in enumerate(set(data.X[col]))}
+            self.unknown_key_dict[col] = len(self.cat_to_int_label[col])
         return self
 
     def _transform(self, data, y=None):
-        X = data.X
-        for col_index in self.selected:
-            for row_index in range(len(X)):
-                key = str(X[row_index, col_index])
-                X[row_index, col_index] = self.cat_to_int_label[col_index].get(key, np.nan)
+        x_tr = pd.DataFrame()
+        for col in self.selected:
+            x_tr[col] = data.X[col].apply(lambda key: self.cat_to_int_label[col].get(key, self.unknown_key_dict[col]))
+        data.update(self.operation, self.selected, x_tr, new_type='NUM')
         return data
 
 
@@ -528,6 +510,7 @@ class TabPCA(Primitive):
 
 class CatCount(Primitive):
     count_dict = None
+    unknown_key = 0
     supported_ops = ('add', 'upd')
 
     def _fit(self, data, y=None):
@@ -539,7 +522,7 @@ class CatCount(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[col] = data.X[col].apply(lambda key: self.count_dict[col][key])
+            x_tr[col] = data.X[col].apply(lambda key: self.count_dict[col].get(key, self.unknown_key))
         data.update(self.operation, self.selected, x_tr, new_type='NUM')
         return data
 
@@ -664,4 +647,3 @@ if __name__ == "__main__":
 
     print("-----")
     print(x_new[:4, 2])
-

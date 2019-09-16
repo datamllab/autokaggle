@@ -1,5 +1,4 @@
 from sklearn.base import BaseEstimator
-from autokaggle.preprocessor import TabularPreprocessor
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
 from abc import abstractmethod
 import numpy as np

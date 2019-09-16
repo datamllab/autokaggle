@@ -13,20 +13,16 @@ from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json,
 
 
 class AutoKaggle(BaseEstimator):
-    def __init__(self, estimator=Classifier(), preprocessor=TabularPreprocessor(), path=None, verbose=True):
+    def __init__(self, objective='classification', config=Config()):
         """
         Initialization function for tabular supervised learner.
         """
-        self.verbose = verbose
         self.is_trained = False
-        self.objective = None
-        self.preprocessor = preprocessor
-        self.model = estimator
-        self.path = path if path is not None else rand_temp_folder_generator()
-        ensure_dir(self.path)
-        if self.verbose:
-            print('Path:', path)
-        self.time_limit = None
+        self.config = config
+        self.config.objective = objective
+        self.preprocessor = TabularPreprocessor(config)
+        # TODO find elegant way of specifying classification or regression
+        self.model = Classifier(config) if objective == 'classification' else Regressor(config)
 
     def fit(self, x, y, time_limit=None, data_info=None):
         """
@@ -44,7 +40,7 @@ class AutoKaggle(BaseEstimator):
         you should warm-start your training from the pre-trained model. Past data will
         NOT be available for re-training.
         """
-        self.time_limit = time_limit if time_limit else 24 * 60 * 60
+        self.config.time_limit = time_limit if time_limit else 24 * 60 * 60
         
         if x.shape[1] == 0:
             raise ValueError("No feature exist!")
@@ -58,12 +54,12 @@ class AutoKaggle(BaseEstimator):
         # self.preprocessor = TabularPreprocessor()
             
         # Fit Model and preprocessor
-        self.preprocessor.fit(x, y, self.time_limit, data_info)
+        self.preprocessor.fit(x, y, data_info)
         x = self.preprocessor.transform(x)
         self.model.fit(x, y)
         self.is_trained = True
 
-        if self.verbose:
+        if self.config.verbose:
             print("The whole available data is: ")
             print("Real-FIT: dim(X)= [{:d}, {:d}]".format(x.shape[0], x.shape[1]))
 
@@ -82,15 +78,15 @@ class AutoKaggle(BaseEstimator):
         return y
 
     def evaluate(self, x_test, y_test):
-        if self.verbose:
-            print('objective:', self.model.objective)
+        if self.config.verbose:
+            print('objective:', self.config.objective)
         y_pred = self.predict(x_test)
         results = None
-        if self.model.objective == 'binary':
+        if self.config.objective == 'binary':
             results = roc_auc_score(y_test, y_pred)
-        elif self.model.objective == 'multiclass':
+        elif self.config.objective == 'multiclass':
             results = f1_score(y_test, y_pred, average='weighted')
-        elif self.model.objective == 'regression':
+        elif self.config.objective == 'regression':
             results = mean_squared_error(y_test, y_pred)
         return results
 

@@ -285,6 +285,6 @@ if __name__ == "__main__":
     # ak.run_automation(classification_task_list)
     import time
     t1 = time.time()
-    ak.evaluate(2071)
+    ak.evaluate(31)
     t2 = time.time()
     print(t2-t1)
