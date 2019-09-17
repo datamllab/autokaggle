@@ -49,14 +49,14 @@ class StackingEnsembler:
         self.objective = objective
         if self.objective == 'regression':
             self.stacking_estimator = LGBMRegressor(silent=False,
-                                           verbose=-1,
-                                           n_jobs=1,
-                                           objective=self.objective)
+                                                    verbose=-1,
+                                                    n_jobs=1,
+                                                    objective=self.objective)
         elif self.objective == 'multiclass' or self.objective == 'binary':
             self.stacking_estimator = LGBMClassifier(silent=False,
-                                            verbose=-1,
-                                            n_jobs=1,
-                                            objective=self.objective)
+                                                     verbose=-1,
+                                                     n_jobs=1,
+                                                     objective=self.objective)
 
     def fit(self, X, y):
         for est in self.estimator_list:

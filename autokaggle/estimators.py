@@ -106,9 +106,9 @@ adaboost_regressor_params = {
 
 
 class Config(BaseEstimator):
-    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=False, num_estimators_ensemble=25,
+    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
                  ensemble_strategy='ranked_ensembling', ensemble_method='max_voting', search_iter=500, cv_folds=3,
-                 subsample_ratio=0.1):
+                 subsample_ratio=0.1, random_ensemble=False):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
         ensure_dir(self.path)
@@ -119,16 +119,20 @@ class Config(BaseEstimator):
         self.use_ensembling = use_ensembling
         self.hparams = None
         self.num_estimators_ensemble = num_estimators_ensemble
+        # self.ensemble_strategy = ensemble_strategy
         self.ensemble_strategy = ensemble_strategy
         self.ensemble_method = ensemble_method
+        self.random_ensemble = random_ensemble
         self.search_iter = search_iter
         self.cv_folds = cv_folds
         self.subsample_ratio = subsample_ratio
         self.resampling_strategy = 'auto'
         self.random_state = 1001
-        self.feature_add_high_cat = 0
-        self.feature_add_cat_num = 10
-        self.feature_add_cat_cat = 10
+
+    def update(self, options):
+        for k, v in options.items():
+            if hasattr(self, k):
+                setattr(self, k, v)
 
 
 class TabularEstimator(BaseEstimator):
@@ -203,24 +207,14 @@ class TabularEstimator(BaseEstimator):
         trials = Trials()
         best = fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials,
                     max_evals=self.config.search_iter)
+
         if self.config.use_ensembling:
-            best_trials = sorted(trials.results, key=lambda k: k['loss'], reverse=False)
-            estimator_list = []
-            for i in range(self.config.num_estimators_ensemble):
-                model_params = best_trials[i]['space']
-                est = model_params['model'](**model_params['param'])
-                estimator_list.append(est)
-            if self.config.ensemble_strategy == 'ranked_ensembling':
-                best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)
-            elif self.config.ensemble_strategy == 'stacking':
-                best_estimator_ = StackingEnsembler(estimator_list, objective=self.config.objective)
-            else:
-                best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)
+            best_estimator_ = self.setup_ensemble(trials)
         else:
             opt = space_eval(self.hparams, best)
             best_estimator_ = opt['model'](**opt['param'])
             if self.config.verbose:
-                print("The best hyperparameter setting is:")
+                print("The best hyperparameter setting found:")
                 print(opt)
         return best_estimator_, trials
             
@@ -231,6 +225,27 @@ class TabularEstimator(BaseEstimator):
     @abstractmethod
     def get_skf(self, folds):
         pass
+
+    def setup_ensemble(self, trials):
+        best_trials = sorted(trials.results, key=lambda k: k['loss'], reverse=False)
+        # Filter the unsuccessful hparam spaces i.e. 'loss' == 1
+        best_trials = [t for t in best_trials if t['loss'] < 1]
+        self.config.num_estimators_ensemble = min(self.config.num_estimators_ensemble, len(best_trials))
+        if self.config.random_ensemble:
+            np.random.shuffle(best_trials)
+        estimator_list = []
+        for i in range(self.config.num_estimators_ensemble):
+            model_params = best_trials[i]['space']
+            est = model_params['model'](**model_params['param'])
+            estimator_list.append(est)
+
+        if self.config.ensemble_strategy == 'ranked_ensembling':
+            best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)
+        elif self.config.ensemble_strategy == 'stacking':
+            best_estimator_ = StackingEnsembler(estimator_list, objective=self.config.objective)
+        else:
+            best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)
+        return best_estimator_
     
     
 class Classifier(TabularEstimator):

@@ -120,9 +120,9 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
 
         # Train
         if task.task_type == 'Supervised Classification':
-            automl = AutoKaggle() if not self.estimator_type else AutoKaggle(self.estimator_type)
+            automl = AutoKaggleClassifier()
         elif task.task_type == 'Supervised Regression':
-            automl = AutoKaggle(Regressor()) if not self.estimator_type else AutoKaggle(self.estimator_type)
+            automl = AutoKaggleRegressor()
         else:
             print("UNSUPPORTED TASK_TYPE")
             assert(0)
@@ -279,12 +279,20 @@ def get_box_plot(data, task_id, metric):
 
 if __name__ == "__main__":
     regression_task_list = [52948, 2295, 4823, 2285, 4729, 4990, 4958, 2280, 4834, 4850, 4839]
+    # classification_task_list = [3021]
     classification_task_list = [3021, 45, 2071, 2076, 3638, 3780, 3902, 3945, 3954, 14951, 59, 24, 146230, 31, 10101,
                                 9914, 3020, 3524, 3573, 3962]
-    ak = BenchmarkingAutoKaggle()
-    # ak.run_automation(classification_task_list)
+    ak = BenchmarkingAutoKaggle(sess_name='test_perf')
     import time
+
     t1 = time.time()
-    ak.evaluate(31)
+    for _ in range(3):
+        ak.run_automation(classification_task_list)
+        ak.export_results()
     t2 = time.time()
     print(t2-t1)
+    # import time
+    # t1 = time.time()
+    # ak.evaluate(31)
+    # t2 = time.time()
+    # print(t2-t1)

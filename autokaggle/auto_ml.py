@@ -13,16 +13,18 @@ from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json,
 
 
 class AutoKaggle(BaseEstimator):
-    def __init__(self, objective='classification', config=Config()):
+    objective = None
+    model = None
+
+    def __init__(self, config=Config(), **kwargs):
         """
         Initialization function for tabular supervised learner.
         """
         self.is_trained = False
         self.config = config
-        self.config.objective = objective
+        self.config.update(kwargs)
+        self.config.objective = self.objective
         self.preprocessor = TabularPreprocessor(config)
-        # TODO find elegant way of specifying classification or regression
-        self.model = Classifier(config) if objective == 'classification' else Regressor(config)
 
     def fit(self, x, y, time_limit=None, data_info=None):
         """
@@ -93,3 +95,19 @@ class AutoKaggle(BaseEstimator):
     def final_fit(self, x_train, y_train):
         x_train = self.preprocessor.transform(x_train)
         self.model.fit(x_train, y_train)
+
+
+class AutoKaggleClassifier(AutoKaggle):
+    objective = 'classification'
+
+    def __init__(self, config=Config(), **kwargs):
+        super().__init__(config, **kwargs)
+        self.model = Classifier(config)
+
+
+class AutoKaggleRegressor(AutoKaggle):
+    objective = 'regression'
+
+    def __init__(self, config=Config(), **kwargs):
+        super().__init__(config, **kwargs)
+        self.model = Regressor(config)

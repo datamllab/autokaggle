@@ -4,7 +4,7 @@ import scipy
 import itertools
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, PowerTransformer, KBinsDiscretizer
+from sklearn.preprocessing import StandardScaler, PowerTransformer, KBinsDiscretizer, OneHotEncoder
 from sklearn.base import TransformerMixin
 from sklearn.base import BaseEstimator
 from sklearn.impute import SimpleImputer
@@ -47,12 +47,13 @@ class TabularPreprocessor:
             ('imputer', Imputation(selected_type='ALL', operation='upd')),
             # ('cat_num_encoder', CatNumEncoder(selected_type1='CAT', selected_type2='NUM')),
             # ('cat_num_encoder', CatCatEncoder(selected_type1='CAT', selected_type2='CAT')),
-            # ('target_encoder', TargetEncoder(selected_type='CAT', operation='add')),
+            ('target_encoder', TargetEncoder(selected_type='CAT', operation='add')),
             # ('count_encoder', CatCount(selected_type='CAT', operation='upd')),
-            ('label_encoder', CatEncoder(selected_type='CAT', operation='upd')),
-            # ('boxcox', BoxCox(selected_type='NUM', operation='upd')),
-            # ('log_square', LogTransform(selected_type='NUM', operation='upd')),
+            # ('one_hot_encoder', OneHot(selected_type='CAT', operation='upd')),
+            # ('label_encoder', LabelEncode(selected_type='CAT', operation='upd')),
             ('scaler', TabScaler(selected_type='NUM', operation='upd')),
+            # ('boxcox', BoxCox(selected_type='NUM', operation='upd')),
+            # ('log_transform', LogTransform(selected_type='NUM', operation='upd')),
             # ('binning', Binning(selected_type='NUM', operation='upd')),
             # ('pca', TabPCA(selected_type='NUM', operation='add')),
             # ('time_diff', TimeDiff(selected_type='TIME', operation='add')),
@@ -142,6 +143,7 @@ class TabularData:
 
     def rename_cols(self, key):
         def rename_fn(col_name):
+            col_name = str(col_name)
             col_name += '_' + key
             while col_name in self.X.columns:
                 col_name += '_' + key
@@ -201,11 +203,13 @@ class Primitive(BaseEstimator, TransformerMixin):
     drop_columns = None
     options = None
     supported_ops = ('add', 'upd', 'del')
+    name_key = ''
 
     def __init__(self, selected_type=None, operation='upd', **kwargs):
         self.selected_type = selected_type
         self.operation = operation
         self.init_vars(**kwargs)
+        self.name_key = self.__class__.__name__
 
     def init_vars(self, **kwargs):
         self.options = kwargs
@@ -250,7 +254,7 @@ class TabScaler(Primitive):
 
     def _transform(self, data, y=None):
         x_tr = self.scaler.transform(data.X[self.selected])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -265,7 +269,7 @@ class BoxCox(Primitive):
 
     def _transform(self, data, y=None):
         x_tr = self.transformer.transform(data.X[self.selected])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -287,11 +291,30 @@ class Binning(Primitive):
     def _transform(self, data, y=None):
         x_tr = self.binner.transform(data.X[self.selected])
         # TODO: decide if cat or num new type
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
-class CatEncoder(Primitive):
+class OneHot(Primitive):
+    ohe = None
+    supported_ops = ('add', 'upd')
+
+    def _fit(self, data, y=None):
+        self.ohe = OneHotEncoder(sparse=False, handle_unknown='ignore')
+        self.ohe.fit(data.X[self.selected], y)
+        return self
+
+    def _transform(self, data, y=None):
+        x_tr = pd.DataFrame(self.ohe.transform(data.X[self.selected]))
+        if self.operation == 'add':
+            data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        elif self.operation == 'upd':
+            data.update('add', self.selected, x_tr, new_type='NUM', key=self.name_key)
+            data.update('del', self.selected, None, None, key=self.name_key)
+        return data
+
+
+class LabelEncode(Primitive):
     cat_to_int_label = None
     unknown_key_dict = None
     supported_ops = ('add', 'upd')
@@ -308,7 +331,7 @@ class CatEncoder(Primitive):
         x_tr = pd.DataFrame()
         for col in self.selected:
             x_tr[col] = data.X[col].apply(lambda key: self.cat_to_int_label[col].get(key, self.unknown_key_dict[col]))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -343,7 +366,7 @@ class TargetEncoder(Primitive):
         x_tr = pd.DataFrame()
         for col in self.selected:
             x_tr[col] = data.X[col].map(self.target_encoding_map[col][0], self.target_encoding_map[col][1])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.__class__.__name__)
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -372,7 +395,7 @@ class CatCatEncoder(PrimitiveHigherOrder):
             if col1 + '_cross_' + col2 in self.cat_cat_map:
                 x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_cat_map[col1 + '_cross_' + col2])
         # TODO: decide new_type
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -414,7 +437,7 @@ class CatNumEncoder(PrimitiveHigherOrder):
             for col2 in self.selected_num:
                 if col1 + '_cross_' + col2 in self.cat_num_map:
                     x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_num_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -445,7 +468,7 @@ class CatBinEncoder(PrimitiveHigherOrder):
             for col2 in self.selected_bin:
                 if col1 + '_cross_' + col2 in self.cat_bin_map:
                     x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_bin_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -459,7 +482,7 @@ class FilterConstant(Primitive):
         return self
 
     def _transform(self, data, y=None):
-        data.update(self.operation, self.drop_columns, None, new_type=None)
+        data.update(self.operation, self.drop_columns, None, new_type=None, key=self.name_key)
         return data
 
 
@@ -473,7 +496,7 @@ class TimeDiff(Primitive):
         x_tr = pd.DataFrame()
         for a, b in itertools.combinations(self.selected, 2):
             x_tr[a + '-' + b] = data.X[a] - data.X[b]
-        data.update(self.operation, self.selected, x_tr, new_type='TIME')
+        data.update(self.operation, self.selected, x_tr, new_type='TIME', key=self.name_key)
         return data
 
 
@@ -488,7 +511,7 @@ class TimeOffset(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         x_tr[self.selected] = data.X[self.selected] - self.start_time
-        data.update(self.operation, self.selected, x_tr, new_type='TIME')
+        data.update(self.operation, self.selected, x_tr, new_type='TIME', key=self.name_key)
         return data
 
 
@@ -504,7 +527,7 @@ class TabPCA(Primitive):
     def _transform(self, data, y=None):
         x_pca = self.pca.transform(data.X[self.selected])
         x_pca = pd.DataFrame(x_pca, columns=['pca_' + str(i) for i in range(x_pca.shape[1])])
-        data.update(self.operation, self.selected, x_pca, new_type='NUM')
+        data.update(self.operation, self.selected, x_pca, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -523,7 +546,7 @@ class CatCount(Primitive):
         x_tr = pd.DataFrame()
         for col in self.selected:
             x_tr[col] = data.X[col].apply(lambda key: self.count_dict[col].get(key, self.unknown_key))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -537,8 +560,8 @@ class LogTransform(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[self.name_key + col] = np.square(np.log(1 + data.X[col]))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM')
+            x_tr[self.name_key + col] =  np.sign(data.X[col]) * np.log(1 + np.abs(data.X[col]))
+        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
@@ -557,7 +580,7 @@ class Imputation(Primitive):
         x_tr = pd.DataFrame()
         for col in self.selected:
             x_tr[col] = data.X[col].fillna(self.impute_dict[col])
-        data.update(self.operation, self.selected, x_tr, new_type=None)
+        data.update(self.operation, self.selected, x_tr, new_type=None, key=self.name_key)
         return data
 
 
@@ -579,7 +602,7 @@ class FeatureFilter(Primitive):
         return self
 
     def _transform(self, data, y=None):
-        data.update(self.operation, self.drop_columns, None, new_type=None)
+        data.update(self.operation, self.drop_columns, None, new_type=None, key=self.name_key)
         return data
 
 
@@ -620,7 +643,7 @@ class FeatureImportance(Primitive):
         return self
 
     def _transform(self, data, y=None):
-        data.update(self.operation, self.drop_columns, None, new_type=None)
+        data.update(self.operation, self.drop_columns, None, new_type=None, key=self.name_key)
         return data
 
 

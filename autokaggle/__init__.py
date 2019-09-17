@@ -1,3 +1,3 @@
-from autokaggle.auto_ml import AutoKaggle
+from autokaggle.auto_ml import AutoKaggleClassifier, AutoKaggleRegressor
 from autokaggle.estimators import *
 from autokaggle.ensemblers import *
