@@ -12,9 +12,11 @@ from autokaggle.estimators import *
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
 
 
+# TODO: Further clean the design of this file
 class AutoKaggle(BaseEstimator):
     objective = None
     model = None
+    preprocessor = None
 
     def __init__(self, config=Config(), **kwargs):
         """
@@ -24,6 +26,9 @@ class AutoKaggle(BaseEstimator):
         self.config = config
         self.config.update(kwargs)
         self.config.objective = self.objective
+        if not self.config.path:
+            self.config.path = rand_temp_folder_generator()
+            # abs_cwd = os.path.split(os.path.abspath(__file__))[0]
         self.preprocessor = TabularPreprocessor(config)
 
     def fit(self, x, y, time_limit=None, data_info=None):
@@ -50,10 +55,6 @@ class AutoKaggle(BaseEstimator):
         while x.shape[0] < 60:
             x = np.concatenate([x, x], axis=0)
             y = np.concatenate([y, y], axis=0)
-        
-        # # Init model and preprocessor
-        # self.model = self.estimator_class(verbose=self.verbose, path=self.path, time_limit=self.time_limit)
-        # self.preprocessor = TabularPreprocessor()
             
         # Fit Model and preprocessor
         self.preprocessor.fit(x, y, data_info)
