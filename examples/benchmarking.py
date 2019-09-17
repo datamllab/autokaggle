@@ -63,6 +63,7 @@ class BenchmarkingBase:
         for task in task_list:
             try:
                 self.evaluate(task, time_limit=time_limit)
+                self.export_results()
             except:
                 print("task: {} didnt work".format(task))
                 

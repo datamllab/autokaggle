@@ -11,7 +11,7 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 
 class Config(BaseEstimator):
     def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
-                 ensemble_strategy='ranked_ensembling', ensemble_method='max_voting', search_iter=500, cv_folds=3,
+                 ensemble_strategy='ranked_ensembling', ensemble_method='max_voting', search_iter=5, cv_folds=3,
                  subsample_ratio=0.1, random_ensemble=False):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()

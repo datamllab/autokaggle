@@ -20,11 +20,11 @@ from imblearn.over_sampling import SMOTE, SMOTENC
 
 
 class TabularEstimator(BaseEstimator):
-    def __init__(self, config=Config(), **kwargs):
+    def __init__(self, config=None, **kwargs):
         """
         Initialization function for tabular supervised learner.
         """
-        self.config = config
+        self.config = config if config else Config()
         self.best_estimator_ = None
         self.hparams = None
 
@@ -68,7 +68,8 @@ class TabularEstimator(BaseEstimator):
         grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=self.config.subsample_ratio)
         score_metric, skf = self.get_skf(self.config.cv_folds)
 
-        def objective_func(args):
+        def objective_func(params):
+            args = params['estimator']
             clf = args['model'](**args['param'])
             try:
                 eval_score = cross_val_score(clf, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
@@ -80,7 +81,8 @@ class TabularEstimator(BaseEstimator):
             return {'loss': 1 - eval_score, 'status': STATUS_OK, 'space': args}
 
         trials = Trials()
-        best = fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials,
+        search_space = {'source': hp.choice('data_source', ['a', 'b']), 'estimator': self.hparams}
+        best = fmin(objective_func, search_space, algo=hyperopt.rand.suggest, trials=trials,
                     max_evals=self.config.search_iter)
 
         if self.config.use_ensembling:
@@ -127,7 +129,7 @@ class Classifier(TabularEstimator):
     """Classifier class.
      It is used for tabular data classification.
     """ 
-    def __init__(self, config=Config(), **kwargs):
+    def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
         self.config.objective = 'classification'
         # TODO: add choice to the set of estimators
@@ -147,7 +149,7 @@ class Regressor(TabularEstimator):
     """Regressor class.
     It is used for tabular data regression.
     """
-    def __init__(self, config=Config(), **kwargs):
+    def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
         self.config.objective = 'regression'
         # TODO: add choice to the set of estimators

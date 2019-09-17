@@ -18,18 +18,18 @@ class AutoKaggle(BaseEstimator):
     model = None
     preprocessor = None
 
-    def __init__(self, config=Config(), **kwargs):
+    def __init__(self, config=None, **kwargs):
         """
         Initialization function for tabular supervised learner.
         """
         self.is_trained = False
-        self.config = config
+        self.config = config if config else Config()
         self.config.update(kwargs)
         self.config.objective = self.objective
         if not self.config.path:
             self.config.path = rand_temp_folder_generator()
             # abs_cwd = os.path.split(os.path.abspath(__file__))[0]
-        self.preprocessor = TabularPreprocessor(config)
+        self.preprocessor = TabularPreprocessor(self.config)
 
     def fit(self, x, y, time_limit=None, data_info=None):
         """
@@ -101,14 +101,14 @@ class AutoKaggle(BaseEstimator):
 class AutoKaggleClassifier(AutoKaggle):
     objective = 'classification'
 
-    def __init__(self, config=Config(), **kwargs):
+    def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
-        self.model = Classifier(config)
+        self.model = Classifier(self.config)
 
 
 class AutoKaggleRegressor(AutoKaggle):
     objective = 'regression'
 
-    def __init__(self, config=Config(), **kwargs):
+    def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
-        self.model = Regressor(config)
+        self.model = Regressor(self.config)
