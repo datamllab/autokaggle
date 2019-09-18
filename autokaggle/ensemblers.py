@@ -15,11 +15,27 @@ from scipy import stats
 from lightgbm import LGBMClassifier, LGBMRegressor
 import collections
 from sklearn.model_selection import RandomizedSearchCV, cross_val_score
+import hyperopt
+from hyperopt import tpe, hp, fmin, space_eval, Trials, STATUS_OK
+from autokaggle.config import classification_hspace, regression_hspace
+
+
+lgbm_classifier_params = {
+    'n_estimators': hp.choice('n_estimators', [100, 150, 200]),
+}
+
+_classification_hspace = {
+    'lgbm': {
+        'model': LGBMClassifier,
+        'param': lgbm_classifier_params
+    },
+}
 
 
 class RankedEnsembler:
-    def __init__(self, estimator_list, ensemble_method='max_voting'):
-        self.ensemble_method = ensemble_method
+    def __init__(self, estimator_list, config):
+        self.config = config
+        self.ensemble_method = config.ensemble_method
         self.estimators = estimator_list
         
     def fit(self, X, y):
@@ -44,44 +60,96 @@ class RankedEnsembler:
 
 
 class StackingEnsembler:
-    def __init__(self, estimator_list, objective):
+    stacking_estimator = None
+
+    def __init__(self, estimator_list, config):
+        self.config = config
         self.estimator_list = estimator_list
-        self.objective = objective
-        if self.objective == 'regression':
-            self.stacking_estimator = LGBMRegressor(silent=False,
-                                                    verbose=-1,
-                                                    n_jobs=1,
-                                                    objective=self.objective)
-        elif self.objective == 'multiclass' or self.objective == 'binary':
-            self.stacking_estimator = LGBMClassifier(silent=False,
-                                                     verbose=-1,
-                                                     n_jobs=1,
-                                                     objective=self.objective)
+        self.objective = config.objective
+        if self.config.objective == 'regression':
+            self.hparams = hp.choice('regressor', [regression_hspace[m] for m in ['lgbm']])
+            self.config.stack_probabilities = False
+        else:
+            self.hparams = hp.choice('classifier', [_classification_hspace[m] for m in ['lgbm']])
+
+    def get_model_predictions(self, X):
+        if self.config.stack_probabilities:
+            predictions = np.zeros((len(X), 1))
+            for i, est in enumerate(self.estimator_list):
+                try:
+                    new = est.predict_proba(X)[:, :-1]
+                    predictions = np.hstack([predictions, new])
+                except AttributeError:
+                    new = np.reshape(est.predict(X), (-1, 1))
+                    predictions = np.hstack([predictions, new])
+            predictions = predictions[:, 1:]
+        else:
+            predictions = np.zeros((len(X), len(self.estimator_list)))
+            for i, est in enumerate(self.estimator_list):
+                predictions[:, i] = est.predict(X)
+        return predictions
 
     def fit(self, X, y):
         for est in self.estimator_list:
             est.fit(X, y)
-        predictions = np.zeros((len(X), len(self.estimator_list)))
-        for i, est in enumerate(self.estimator_list):
-            predictions[:, i] = est.predict(X)
+        predictions = self.get_model_predictions(X)
+        self.stacking_estimator = self.search(predictions, y)
         self.stacking_estimator.fit(predictions, y)
 
+    def search(self, x, y):
+        score_metric, skf = self.get_skf(self.config.cv_folds)
+
+        def objective_func(args):
+            clf = args['model'](**args['param'])
+            try:
+                eval_score = cross_val_score(clf, x, y, scoring=score_metric, cv=skf).mean()
+            except ValueError:
+                eval_score = 0
+            if self.config.verbose:
+                print("Ensembling CV Score:", eval_score)
+                print("\n=================")
+            return {'loss': 1 - eval_score, 'status': STATUS_OK, 'space': args}
+
+        trials = Trials()
+        best = fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials,
+                    max_evals=50)
+
+        opt = space_eval(self.hparams, best)
+        best_estimator_ = opt['model'](**opt['param'])
+        if self.config.verbose:
+            print("The best hyperparameter setting found for stacking:")
+            print(opt)
+        return best_estimator_
+
     def predict(self, X):
-        predictions = np.zeros((len(X), len(self.estimator_list)))
-        for i, est in enumerate(self.estimator_list):
-            predictions[:, i] = est.predict(X)
+        predictions = self.get_model_predictions(X)
         return self.stacking_estimator.predict(predictions)
+
+    def get_skf(self, folds):
+        if self.config.objective == 'binary':
+            score_metric = 'roc_auc'
+            skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
+        elif self.config.objective == 'multiclass':
+            score_metric = 'f1_weighted'
+            skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
+        elif self.config.objective == 'regression':
+            score_metric = 'neg_mean_squared_error'
+            skf = KFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
+        else:
+            ValueError("Invalid objective")
+        return score_metric, skf
 
 
 class EnsembleSelection:
     indices_ = None
     weights_ = None
 
-    def __init__(self, estimator_list, objective, ensemble_size=25):
+    def __init__(self, estimator_list, config):
         self.estimator_list = estimator_list
-        self.objective = objective
+        self.config = config
+        self.objective = config.objective
         self.indices_, self.weights_ = [], []
-        self.ensemble_size = min(len(estimator_list), ensemble_size)
+        self.ensemble_size = len(estimator_list)
         if self.objective == 'regression':
             self.score_metric = 'neg_mean_squared_error'
             self.skf = KFold(n_splits=3, shuffle=True, random_state=1001)

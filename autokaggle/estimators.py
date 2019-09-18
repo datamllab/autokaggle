@@ -143,11 +143,11 @@ class TabularEstimator(BaseEstimator):
                 estimator_list.append(est)
 
         if self.config.ensemble_strategy == 'ranked_ensembling':
-            best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)
+            best_estimator_ = RankedEnsembler(estimator_list, config=self.config)
         elif self.config.ensemble_strategy == 'stacking':
-            best_estimator_ = StackingEnsembler(estimator_list, objective=self.config.objective)
+            best_estimator_ = StackingEnsembler(estimator_list, config=self.config)
         else:
-            best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)
+            best_estimator_ = RankedEnsembler(estimator_list, config=self.config)
         return best_estimator_
     
     

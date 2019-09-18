@@ -286,13 +286,13 @@ if __name__ == "__main__":
     ak = BenchmarkingAutoKaggle(sess_name='test_perf')
     import time
 
-    t1 = time.time()
-    for _ in range(3):
-        ak.run_automation(classification_task_list)
-    t2 = time.time()
-    print(t2-t1)
-    # import time
     # t1 = time.time()
-    # ak.evaluate(3945)
+    # for _ in range(3):
+    #     ak.run_automation(classification_task_list)
     # t2 = time.time()
     # print(t2-t1)
+    import time
+    t1 = time.time()
+    ak.evaluate(31)
+    t2 = time.time()
+    print(t2-t1)
