@@ -1,3 +1,5 @@
+import collections
+
 from sklearn.base import BaseEstimator
 from abc import abstractmethod
 import numpy as np
@@ -103,18 +105,42 @@ class TabularEstimator(BaseEstimator):
     def get_skf(self, folds):
         pass
 
+    @staticmethod
+    def pick_diverse_estimators(trial_list, k):
+        groups = collections.defaultdict(list)
+
+        for obj in trial_list:
+            groups[obj['space']['model']].append(obj)
+        estimator_list = []
+        idx, j = 0, 0
+        while idx < k:
+            for grp in groups.values():
+                if j < len(grp):
+                    model_params = grp[j]['space']
+                    est = model_params['model'](**model_params['param'])
+                    estimator_list.append(est)
+                    idx += 1
+            j += 1
+        return estimator_list
+
     def setup_ensemble(self, trials):
-        best_trials = sorted(trials.results, key=lambda k: k['loss'], reverse=False)
         # Filter the unsuccessful hparam spaces i.e. 'loss' == 1
-        best_trials = [t for t in best_trials if t['loss'] < 1]
+        best_trials = [t for t in trials.results if t['loss'] < 1]
+        best_trials = sorted(best_trials, key=lambda k: k['loss'], reverse=False)
+
         self.config.num_estimators_ensemble = min(self.config.num_estimators_ensemble, len(best_trials))
+
         if self.config.random_ensemble:
             np.random.shuffle(best_trials)
-        estimator_list = []
-        for i in range(self.config.num_estimators_ensemble):
-            model_params = best_trials[i]['space']
-            est = model_params['model'](**model_params['param'])
-            estimator_list.append(est)
+
+        if self.config.diverse_ensemble:
+            estimator_list = self.pick_diverse_estimators(best_trials, self.config.num_estimators_ensemble)
+        else:
+            estimator_list = []
+            for i in range(self.config.num_estimators_ensemble):
+                model_params = best_trials[i]['space']
+                est = model_params['model'](**model_params['param'])
+                estimator_list.append(est)
 
         if self.config.ensemble_strategy == 'ranked_ensembling':
             best_estimator_ = RankedEnsembler(estimator_list, ensemble_method=self.config.ensemble_method)

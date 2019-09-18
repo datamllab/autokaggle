@@ -7,12 +7,14 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, RandomF
     ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from lightgbm import LGBMClassifier, LGBMRegressor
+from catboost import CatBoostClassifier, Pool, CatBoostRegressor
+import numpy as np
 
 
 class Config(BaseEstimator):
     def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
-                 ensemble_strategy='ranked_ensembling', ensemble_method='max_voting', search_iter=5, cv_folds=3,
-                 subsample_ratio=0.1, random_ensemble=False):
+                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=5, cv_folds=3,
+                 subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
         ensure_dir(self.path)
@@ -32,7 +34,9 @@ class Config(BaseEstimator):
         self.resampling_strategy = 'auto'
         self.random_state = 1001
         self.classification_models = ['knn', 'svm', 'lgbm', 'random_forest', 'adaboost']
-        self.regression_models = ['extratree', 'ridge', 'lgbm', 'random_forest', 'adaboost']
+        # self.classification_models = ['knn', 'lgbm', 'random_forest',]
+        self.regression_models = ['extratree', 'ridge', 'lgbm', 'random_forest', 'adaboost', 'catboost']
+        self.diverse_ensemble = diverse_ensemble
 
     def update(self, options):
         for k, v in options.items():
@@ -49,9 +53,9 @@ knn_classifier_params = {
 }
 
 svc_params = {
-    'C': hp.lognormal('C', 0, 1),
+    'C': hp.loguniform('C', np.log(1e-5), np.log(1e5)),
     'kernel': hp.choice('kernel', ['rbf', 'poly', 'linear', 'sigmoid']),
-    'degree': hp.choice('degree', range(1, 6)),
+    'degree': hp.choice('degree', range(1, 7)),
     'gamma': hp.uniform('gamma', 0.001, 10000),
     'max_iter': 50000,
 }
@@ -72,13 +76,23 @@ lgbm_classifier_params = {
     'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
     'max_depth': hp.choice('max_depth', range(5, 10)),
     'n_estimators': hp.choice('n_estimators', range(50, 200)),
-    'learning_rate': hp.lognormal('learning_rate', 0, 1),
+    'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-5), high=np.log(1)),
 }
 
 adaboost_classifier_params = {
     'algorithm': hp.choice('algorithm_adaboost', ['SAMME.R', 'SAMME']),
     'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
-    'learning_rate': hp.lognormal('learning_rate_adaboost', 0, 1),
+    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-5), high=np.log(1)),
+}
+
+catboost_classifier_params = {
+    'iterations': hp.choice('catboost_iterations', [5, 10]),
+    'depth': hp.choice('depth_catboost', range(4, 11)),
+    'learning_rate': hp.loguniform('learning_rate_catboost', low=np.log(1e-3), high=np.log(1)),
+    'loss_function': hp.choice('loss_function_catboost', ['Logloss', 'CrossEntropy']),
+    'verbose': True,
+    'leaf_estimation_iterations': 10,
+    'l2_leaf_reg': hp.choice('l2_leaf_reg_catboost', np.logspace(-20, -19, 3))
 }
 
 extra_trees_regressor_params = {
@@ -92,7 +106,7 @@ extra_trees_regressor_params = {
 ridge_params = {
     'fit_intercept': True,
     'tol': hp.loguniform('tol_ridge', 1e-5, 1e-1),
-    'alpha': hp.loguniform('alpha_ridge', 1e-5, 10)
+    'alpha': hp.loguniform('alpha_ridge', np.log(1e-5), np.log(10))
 }
 
 random_forest_regressor_params = {
@@ -111,13 +125,21 @@ lgbm_regressor_params = {
     'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
     'max_depth': hp.choice('max_depth', range(5, 10)),
     'n_estimators': hp.choice('n_estimators', range(50, 200)),
-    'learning_rate': hp.lognormal('learning_rate', 0, 1),
+    'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-5), high=np.log(1)),
 }
 
 adaboost_regressor_params = {
     'loss': hp.choice('loss_adaboost', ["linear", "square", "exponential"]),
     'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
-    'learning_rate': hp.lognormal('learning_rate_adaboost', 0, 1),
+    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-5), high=np.log(1)),
+}
+
+catboost_regressor_params = {
+    'iterations': 2,
+    'depth': hp.choice('depth_catboost', range(4, 10)),
+    'learning_rate': 1,
+    'loss_function': 'RMSE',
+    'verbose': True
 }
 
 
@@ -141,7 +163,11 @@ regression_hspace = {
     'adaboost': {
         'model': AdaBoostRegressor,
         'param': adaboost_regressor_params
-     }
+     },
+    'catboost': {
+        'model': CatBoostRegressor,
+        'param': catboost_regressor_params
+    }
 }
 
 
@@ -165,5 +191,9 @@ classification_hspace = {
     'adaboost': {
         'model': AdaBoostClassifier,
         'param': adaboost_classifier_params
+    },
+    'catboost': {
+        'model': CatBoostClassifier,
+        'param': catboost_classifier_params
     }
 }

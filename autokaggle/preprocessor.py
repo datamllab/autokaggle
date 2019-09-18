@@ -125,7 +125,7 @@ class TabularData:
             raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
 
         self.X = raw_x
-        self.update_cat_cardinality()
+        # self.update_cat_cardinality()
 
         if self.verbose:
             print('DATA_INFO: {}'.format(self.data_info))
@@ -178,6 +178,7 @@ class TabularData:
         self.n_cat = len(self.cat_col)
 
     def update_cat_cardinality(self):
+        # TODO: too slow make it faster
         if not self.cat_cardinality:
             self.cat_cardinality = {}
         for c in self.cat_col:
