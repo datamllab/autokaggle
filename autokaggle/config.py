@@ -46,26 +46,26 @@ class Config(BaseEstimator):
 
 
 knn_classifier_params = {
-    'n_neighbors': hp.choice('n_neighbors', range(2, 20)),
-    'algorithm': hp.choice('algorithm', ['ball_tree', 'kd_tree', 'brute']),
-    'leaf_size': hp.choice('leaf_size', range(5, 50)),
-    'metric': hp.choice('metric', ["euclidean", "manhattan", "chebyshev", "minkowski"]),
-    'p': hp.choice('p', range(1, 4)),
+    'n_neighbors': hp.choice('n_neighbors_knn', [1, 2, 4, 8, 16, 32, 64, 100]),
+    'weights': hp.choice('weight_knn', ['uniform', 'distance']),
+    'metric': hp.choice('metric_knn', ["euclidean", "manhattan", "chebyshev", "minkowski"]),
+    'p': hp.choice('p_knn', range(1, 3)),
 }
 
 svc_params = {
-    'C': hp.loguniform('C', np.log(1e-5), np.log(1e5)),
-    'kernel': hp.choice('kernel', ['rbf', 'poly', 'linear', 'sigmoid']),
-    'degree': hp.choice('degree', range(1, 7)),
-    'gamma': hp.uniform('gamma', 0.001, 10000),
+    'C': hp.loguniform('C_svm', np.log(0.03125), np.log(32768)),
+    'kernel': hp.choice('kernel_svm', ['rbf', 'poly', 'sigmoid']),
+    'degree': hp.choice('degree_svm', range(2, 6)),
+    'gamma': hp.loguniform('gamma_svm', np.log(3e-5), np.log(8)),
     'max_iter': 50000,
 }
 
 random_forest_classifier_params = {
-    'criterion': hp.choice('criterion', ['entropy', 'gini']),
-    'max_features': hp.uniform('max_features', 0, 1.0),
-    'n_estimators': hp.choice('rf_n_estimators', range(50, 200)),
-    'min_samples_leaf': hp.choice('min_samples_leaf', range(1, 10))
+    'criterion': hp.choice('criterion_rf', ['entropy', 'gini']),
+    'max_features': hp.uniform('max_features_rf', 0, 1.0),
+    'n_estimators': hp.choice('n_estimators_rf', [100, 50]),
+    'min_samples_leaf': hp.choice('min_samples_leaf_rf', range(1, 20)),
+    'min_samples_split': hp.choice('min_samples_split_rf', range(2, 20)),
 }
 
 lgbm_classifier_params = {
@@ -73,21 +73,21 @@ lgbm_classifier_params = {
     'min_split_gain': 0.1,
     'subsample': 0.8,
     'num_leaves': 80,
-    'colsample_bytree': hp.uniform('colsample_bytree', 0.4, 0.8),
-    'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
-    'max_depth': hp.choice('max_depth', range(5, 10)),
-    'n_estimators': hp.choice('n_estimators', range(50, 200)),
-    'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-5), high=np.log(1)),
+    'colsample_bytree': hp.uniform('colsample_bytree_lgbm', 0.4, 0.8),
+    'min_child_weight': hp.choice('min_child_weight_lgbm', range(1, 100)),
+    'max_depth': hp.choice('max_depth_lgbm', range(5, 10)),
+    'n_estimators': hp.choice('n_estimators_lgbm', range(50, 200)),
+    'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-2), high=np.log(2)),
 }
 
 adaboost_classifier_params = {
     'algorithm': hp.choice('algorithm_adaboost', ['SAMME.R', 'SAMME']),
-    'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
-    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-5), high=np.log(1)),
+    'n_estimators': hp.choice('n_estimators_adaboost', range(50, 500)),
+    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2), high=np.log(2)),
 }
 
 catboost_classifier_params = {
-    'iterations': hp.choice('catboost_iterations', [5, 10]),
+    'iterations': hp.choice('iterations_catboost', [5, 10]),
     'depth': hp.choice('depth_catboost', range(4, 11)),
     'learning_rate': hp.loguniform('learning_rate_catboost', low=np.log(1e-3), high=np.log(1)),
     'loss_function': hp.choice('loss_function_catboost', ['Logloss', 'CrossEntropy']),
@@ -97,11 +97,13 @@ catboost_classifier_params = {
 }
 
 extra_trees_regressor_params = {
-    'n_estimators': hp.choice('n_estimators_extra_trees', range(50, 200)),
+    'n_estimators': hp.choice('n_estimators_extra_trees', [50, 100, 200]),
     'criterion': hp.choice('criterion_extra_trees', ['mse', 'friedman_mse', 'mae']),
     'max_features': hp.uniform('max_features_extra_trees', 0, 1.0),
-    'min_samples_leaf': hp.choice('min_samples_leaf_extra_trees', range(1, 10)),
-    'min_impurity_decrease': 0.0
+    'min_samples_leaf': hp.choice('min_samples_leaf_extra_trees', range(1, 20)),
+    'min_samples_split': hp.choice('min_samples_split_extra_trees', range(2, 20)),
+    'min_impurity_decrease': 0.0,
+    'bootstrap': hp.choice('bootstrap_extra_trees', [True, False]),
 }
 
 ridge_params = {
@@ -111,10 +113,12 @@ ridge_params = {
 }
 
 random_forest_regressor_params = {
-    'criterion': hp.choice('criterion', ['mse', 'friedman_mse', 'mae']),
-    'max_features': hp.uniform('max_features', 0, 1.0),
-    'n_estimators': hp.choice('rf_n_estimators', range(50, 200)),
-    'min_samples_leaf': hp.choice('min_samples_leaf', range(1, 10))
+    'criterion': hp.choice('criterion_rf', ['mse', 'friedman_mse', 'mae']),
+    'max_features': hp.uniform('max_features_rf', 0.1, 1.0),
+    'n_estimators': hp.choice('n_estimators_rf', [50, 100, 200]),
+    'min_samples_leaf': hp.choice('min_samples_leaf_rf', range(1, 10)),
+    'min_samples_split': hp.choice('min_samples_split_rf', range(2, 10)),
+    'bootstrap': hp.choice('bootstrap_rf', [True, False]),
 }
 
 lgbm_regressor_params = {
@@ -122,17 +126,18 @@ lgbm_regressor_params = {
     'min_split_gain': 0.1,
     'subsample': 0.8,
     'num_leaves': 80,
-    'colsample_bytree': hp.uniform('colsample_bytree', 0.4, 0.8),
-    'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
-    'max_depth': hp.choice('max_depth', range(5, 10)),
-    'n_estimators': hp.choice('n_estimators', range(50, 200)),
-    'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-5), high=np.log(1)),
+    'colsample_bytree': hp.uniform('colsample_bytree_lgbm', 0.4, 0.8),
+    'min_child_weight': hp.choice('min_child_weight_lgbm', range(1, 100)),
+    'max_depth': hp.choice('max_depth_lgbm', range(5, 10)),
+    'n_estimators': hp.choice('n_estimators_lgbm', range(50, 200)),
+    'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-5), high=np.log(1)),
 }
 
 adaboost_regressor_params = {
     'loss': hp.choice('loss_adaboost', ["linear", "square", "exponential"]),
-    'n_estimators': hp.choice('n_estimators_adaboost', range(50, 200)),
-    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-5), high=np.log(1)),
+    'n_estimators': hp.choice('n_estimators_adaboost', range(50, 300)),
+    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2), high=np.log(2)),
+    # 'max_depth': hp.choice('max_depth_adaboost', range(1, 11)),
 }
 
 catboost_regressor_params = {
