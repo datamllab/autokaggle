@@ -7,7 +7,7 @@ import random
 import json
 from statistics import mode
 
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error
 from joblib import dump, load
@@ -90,11 +90,12 @@ class StackingEnsembler:
         return predictions
 
     def fit(self, X, y):
+        x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.2)
         for est in self.estimator_list:
-            est.fit(X, y)
-        predictions = self.get_model_predictions(X)
-        self.stacking_estimator = self.search(predictions, y)
-        self.stacking_estimator.fit(predictions, y)
+            est.fit(x_train, y_train)
+        predictions = self.get_model_predictions(x_val)
+        self.stacking_estimator = self.search(predictions, y_val)
+        self.stacking_estimator.fit(predictions, y_val)
 
     def search(self, x, y):
         score_metric, skf = self.get_skf(self.config.cv_folds)
