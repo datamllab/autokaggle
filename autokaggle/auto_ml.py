@@ -274,7 +274,7 @@ class AutoPipe(BaseEstimator):
         self._estimator_type = 'classifier' if is_classifier(model_class) else 'regressor'
 
     def fit(self, x, y):
-        self.prep = TabularPreprocessor(self.config)
+        self.prep = TabularPreprocessor(self.config, self.p_params)
         self.model = self.model_class(**self.m_params)
         x = self.prep.fit_transform(x, y)
         self.model.fit(x, y)

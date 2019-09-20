@@ -18,12 +18,15 @@ LEVEL_HIGH = 32
 class TabularPreprocessor(TransformerMixin):
     pipeline = None
     data_info = None
+    params = None
+    config = None
 
-    def __init__(self, config):
+    def __init__(self, config, params):
         """
         Initialization function for tabular preprocessor.
         """
         self.config = config
+        self.params = params
 
     def fit(self, raw_x, y):
         """
@@ -40,25 +43,15 @@ class TabularPreprocessor(TransformerMixin):
         """
         data = TabularData(raw_x, self.config.data_info, self.config.verbose)
 
-        self.pipeline = Pipeline([
-            ('imputer', Imputation(operation='upd', selected_type='ALL')),
-            # ('cat_num_encoder', CatNumEncoder(operation='add', selected_type1='CAT', selected_type2='NUM')),
-            # ('cat_cat_encoder', CatCatEncoder(operation='add', selected_type1='CAT', selected_type2='CAT')),
-            ('target_encoder', TargetEncoder(operation='upd', selected_type='CAT')),
-            # ('count_encoder', CatCount(operation='upd', selected_type='CAT')),
-            # ('one_hot_encoder', OneHot(operation='upd', selected_type='CAT')),
-            # ('label_encoder', LabelEncode(operation='upd', selected_type='CAT')),
-            ('scaler', TabScaler(operation='upd', selected_type='NUM')),
-            # ('boxcox', BoxCox(operation='upd', selected_type='NUM')),
-            # ('log_transform', LogTransform(operation='upd', selected_type='NUM')),
-            # ('binning', Binning(operation='upd', selected_type='NUM')),
-            # ('pca', TabPCA(operation='add', selected_type='NUM')),
-            # ('time_diff', TimeDiff(operation='add', selected_type='TIME')),
-            # ('time_offset', TimeOffset(operation='upd', selected_type='TIME')),
-            ('filter', FilterConstant(operation='del', selected_type='ALL')),
-            # ('pearson_corr', FeatureFilter(operation='del', selected_type='ALL')),
-            # ('lgbm_feat_selection', FeatureImportance(operation='del', selected_type='ALL')),
-        ])
+        steps = []
+        steps.extend(self.get_imputation_pipeline(self.params))
+        steps.extend(self.get_higher_order_pipeline(self.params))
+        steps.extend(self.get_categorical_pipeline(self.params))
+        steps.extend(self.get_numerical_pipeline(self.params))
+        steps.extend(self.get_time_pipeline(self.params))
+        steps.extend(self.get_filtering_pipeline(self.params))
+        self.pipeline = Pipeline(steps)
+
         self.pipeline.fit(data, y)
 
         return self
@@ -78,6 +71,94 @@ class TabularPreprocessor(TransformerMixin):
         data = TabularData(raw_x, self.config.data_info, self.config.verbose)
         a = self.pipeline.transform(data).X
         return a.values
+
+    @staticmethod
+    def get_categorical_pipeline(params):
+        choice = params.get('cat_encoding', 'target')
+        cat_pipeline = []
+        if choice == 'target':
+            cat_pipeline.append(('target_encoder', TargetEncoder(operation='upd', selected_type='CAT')))
+        elif choice == 'label':
+            cat_pipeline.append(('label_encoder', LabelEncode(operation='upd', selected_type='CAT')))
+        elif choice == 'count':
+            cat_pipeline.append(('count_encoder', CatCount(operation='upd', selected_type='CAT')))
+        elif choice == 'target+count':
+            cat_pipeline.append(('target_encoder', TargetEncoder(operation='add', selected_type='CAT')))
+            cat_pipeline.append(('count_encoder', CatCount(operation='upd', selected_type='CAT')))
+        elif choice == 'one_hot':
+            cat_pipeline.append(('one_hot_encoder', OneHot(operation='upd', selected_type='CAT')))
+        elif choice == 'target+label':
+            cat_pipeline.append(('target_encoder', TargetEncoder(operation='add', selected_type='CAT')))
+            cat_pipeline.append(('label_encoder', LabelEncode(operation='upd', selected_type='CAT')))
+        else:
+            raise ValueError
+        return cat_pipeline
+
+    @staticmethod
+    def get_numerical_pipeline(params):
+        scaling = params.get('scaling', True)
+        log_transform = params.get('log_transform', False)
+        power_transform = params.get('power_transform', False)
+        pca = params.get('pca', False)
+        binning = params.get('binning', False)
+
+        numeric_pipeline = []
+        if scaling:
+            numeric_pipeline.append(('scaler', TabScaler(operation='upd', selected_type='NUM')))
+        if log_transform:
+            numeric_pipeline.append(('log_transform', LogTransform(operation='upd', selected_type='NUM')))
+        if power_transform:
+            numeric_pipeline.append(('boxcox', BoxCox(operation='upd', selected_type='NUM')))
+        if pca:
+            numeric_pipeline.append(('pca', TabPCA(operation='add', selected_type='NUM')))
+        if binning:
+            numeric_pipeline.append(('binning', Binning(operation='add', selected_type='NUM')))
+        return numeric_pipeline
+
+    def get_filtering_pipeline(self, params):
+        pearson_thresh = params.get('pearson_thresh', 0)
+        feat_importance_thresh = params.get('feat_importance_thresh', 0)
+
+        filter_pipeline = [('filter', FilterConstant(operation='del', selected_type='ALL'))]
+        if pearson_thresh > 0:
+            filter_pipeline.append(('pearson_corr', FeatureFilter(operation='del', selected_type='ALL',
+                                                                  threshold=pearson_thresh)))
+        if feat_importance_thresh > 0:
+            filter_pipeline.append(('lgbm_feat_selection', FeatureImportance(operation='del',
+                                                                             selected_type='ALL',
+                                                                             threshold=feat_importance_thresh,
+                                                                             task_type=self.config.objective)))
+        return filter_pipeline
+
+    @staticmethod
+    def get_time_pipeline(params):
+        add_offset = params.get('add_time_offset', False)
+        add_diff = params.get('add_time_diff', False)
+        time_pipeline = []
+        if add_offset:
+            time_pipeline.append(('time_offset', TimeOffset(operation='upd', selected_type='TIME')))
+        if add_diff:
+            time_pipeline.append(('time_diff', TimeDiff(operation='add', selected_type='TIME')))
+        return time_pipeline
+
+    @staticmethod
+    def get_imputation_pipeline(params):
+        strategy = params.get('imputation_strategy', 'most_frequent')
+        impute_pipeline = [('imputer', Imputation(operation='upd', selected_type='ALL', strategy=strategy))]
+        return impute_pipeline
+
+    @staticmethod
+    def get_higher_order_pipeline(params):
+        cat_num_strategy = params.get('cat_num_strategy', None)
+        cat_cat_strategy = params.get('cat_cat_strategy', None)
+        pipeline = []
+        if cat_num_strategy:
+            pipeline.append(('cat_num_encoder', CatNumEncoder(operation='add', selected_type1='CAT',
+                                                              selected_type2='NUM', strategy=cat_num_strategy)))
+        if cat_cat_strategy:
+            pipeline.append(('cat_cat_encoder', CatCatEncoder(operation='add', selected_type1='CAT',
+                                                              selected_type2='CAT', strategy=cat_cat_strategy)))
+        return pipeline
 
 
 class TabularData:
@@ -385,6 +466,10 @@ class TargetEncoder(Primitive):
 class CatCatEncoder(PrimitiveHigherOrder):
     supported_ops = ('add', )
     cat_cat_map = None
+    strategy = None
+
+    def init_vars(self, strategy='count'):
+        self.strategy = strategy
 
     @staticmethod
     def cat_cat_count(df, col1, col2, strategy='count'):
@@ -398,7 +483,6 @@ class CatCatEncoder(PrimitiveHigherOrder):
 
     def _fit(self, data, y=None):
         self.cat_cat_map = {}
-        self.strategy = self.options.get('strategy', 'count')
         self.selected_1 = list(set(self.selected_1 + self.selected_2))
         for col1, col2 in itertools.combinations(self.selected_1, 2):
             self.cat_cat_map[col1 + '_cross_' + col2] = self.cat_cat_count(data.X, col1, col2, self.strategy)
@@ -416,6 +500,10 @@ class CatCatEncoder(PrimitiveHigherOrder):
 class CatNumEncoder(PrimitiveHigherOrder):
     supported_ops = ('add', )
     cat_num_map = None
+    strategy = None
+
+    def init_vars(self, strategy='mean'):
+        self.strategy = strategy
 
     @staticmethod
     def cat_num_interaction(df, col1, col2, method='mean'):
@@ -434,7 +522,6 @@ class CatNumEncoder(PrimitiveHigherOrder):
 
     def _fit(self, data, y=None):
         self.cat_num_map = {}
-        self.strategy = self.options.get('strategy', 'mean')
         for col1 in self.selected_1:
             for col2 in self.selected_2:
                 self.cat_num_map[col1 + '_cross_' + col2] = self.cat_num_interaction(data.X, col1, col2, self.strategy)
@@ -453,6 +540,10 @@ class CatNumEncoder(PrimitiveHigherOrder):
 class CatBinEncoder(PrimitiveHigherOrder):
     supported_ops = ('add', )
     cat_bin_map = None
+    strategy = None
+
+    def init_vars(self, strategy='percent_true'):
+        self.strategy = strategy
 
     @staticmethod
     def cat_bin_interaction(df, col1, col2, strategy='percent_true'):
@@ -466,7 +557,6 @@ class CatBinEncoder(PrimitiveHigherOrder):
 
     def _fit(self, data, y=None):
         self.cat_bin_map = {}
-        self.strategy = self.options.get('strategy', 'percent_true')
         for col1 in self.selected_1:
             for col2 in self.selected_2:
                 self.cat_bin_map[col1 + '_cross_' + col2] = self.cat_bin_interaction(data.X, col1, col2, self.strategy)
@@ -578,12 +668,21 @@ class LogTransform(Primitive):
 class Imputation(Primitive):
     impute_dict = None
     supported_ops = ('add', 'upd')
+    strategy = None
+
+    def init_vars(self, strategy='most_frequent'):
+        self.strategy = strategy
 
     def _fit(self, data, y=None):
         self.impute_dict = {}
         for col in self.selected:
-            value_counts = data.X[col].value_counts()
-            self.impute_dict[col] = value_counts.idxmax() if not value_counts.empty else 0
+            if self.strategy == 'most_frequent':
+                value_counts = data.X[col].value_counts()
+                self.impute_dict[col] = value_counts.idxmax() if not value_counts.empty else 0
+            elif self.strategy == 'zero':
+                self.impute_dict[col] = 0
+            else:
+                raise ValueError
         return self
 
     def _transform(self, data, y=None):
@@ -599,6 +698,8 @@ class FeatureFilter(Primitive):
     supported_ops = ('del',)
 
     def init_vars(self, threshold=0.001):
+        if threshold == 0:
+            self.selected = None
         self.threshold = threshold
         self.drop_columns = []
 
@@ -622,6 +723,8 @@ class FeatureImportance(Primitive):
     supported_ops = ('del',)
 
     def init_vars(self, threshold=0.001, task_type='classification'):
+        if threshold == 0:
+            self.selected = None
         self.threshold = threshold
         self.drop_columns = []
         self.task_type = task_type

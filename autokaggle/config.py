@@ -12,8 +12,8 @@ import numpy as np
 
 
 class Config:
-    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=5,
-                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=5, cv_folds=3,
+    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
+                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=500, cv_folds=3,
                  subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False,
                  data_info=None, balance_class_dist=False):
         self.verbose = verbose
