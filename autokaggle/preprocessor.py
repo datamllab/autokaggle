@@ -382,8 +382,7 @@ class Binning(Primitive):
         return self
 
     def _transform(self, data, y=None):
-        x_tr = self.binner.transform(data.X[self.selected])
-        # TODO: decide if cat or num new type
+        x_tr = pd.DataFrame(self.binner.transform(data.X[self.selected]))
         data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
         return data
 

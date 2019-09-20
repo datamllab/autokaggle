@@ -267,9 +267,33 @@ regression_hspace_base = {
 }
 
 regression_p_hspace_base = {
-
+    'cat_encoding': hp.choice('cat_enc', ['count', 'target+count', 'target+label', 'label']),
+    'scaling': hp.choice('scaling', [True, False]),
+    'log_transform': hp.choice('log_transform', [True, False]),
+    'power_transform': hp.choice('power_transform', [True, False]),
+    'pca': hp.choice('pca', [True, False]),
+    'binning': hp.choice('binning', [True, False]),
+    'add_time_offset': hp.choice('add_time_offset', [True, False]),
+    'add_time_diff': hp.choice('add_time_diff', [True, False]),
+    # 'cat_num_strategy': hp.choice('cat_num_strategy', ['mean', 'std', 'max', 'min', None]),
+    # 'cat_cat_strategy': hp.choice('cat_cat_strategy', ['count', 'nunique', None]),
+    'imputation_strategy': hp.choice('imputation_strategy', ['most_frequent', 'zero']),
+    'pearson_thresh': hp.uniform('pearson_thresh', 0.001, 0.01),
+    'feat_importance_thresh': hp.uniform('feat_importance_thresh', 0.001, 0.01)
 }
 
 classification_p_hspace_base = {
-
+    'cat_encoding': hp.choice('cat_enc', ['target', 'count', 'target+count', 'target+label']),
+    'scaling': hp.choice('scaling', [True, False]),
+    'log_transform': hp.choice('log_transform', [True, False]),
+    'power_transform': hp.choice('power_transform', [True, False]),
+    'pca': hp.choice('pca', [True, False]),
+    'binning': hp.choice('binning', [True, False]),
+    'add_time_offset': hp.choice('add_time_offset', [True, False]),
+    'add_time_diff': hp.choice('add_time_diff', [True, False]),
+    # 'cat_num_strategy': hp.choice('cat_num_strategy', ['mean', 'std', 'max', 'min', None]),
+    # 'cat_cat_strategy': hp.choice('cat_cat_strategy', ['count', 'nunique', None]),
+    'imputation_strategy': hp.choice('imputation_strategy', ['most_frequent', 'zero']),
+    'pearson_thresh': hp.uniform('pearson_thresh', 0.001, 0.01),
+    'feat_importance_thresh': hp.uniform('feat_importance_thresh', 0.001, 0.01)
 }
