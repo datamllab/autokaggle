@@ -11,10 +11,11 @@ from catboost import CatBoostClassifier, Pool, CatBoostRegressor
 import numpy as np
 
 
-class Config(BaseEstimator):
-    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
-                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=500, cv_folds=3,
-                 subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False):
+class Config:
+    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=5,
+                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=5, cv_folds=3,
+                 subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False,
+                 data_info=None, balance_class_dist=False):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
         ensure_dir(self.path)
@@ -38,6 +39,8 @@ class Config(BaseEstimator):
         self.regression_models = ['extratree', 'ridge', 'lgbm', 'random_forest', 'adaboost', 'catboost']
         self.diverse_ensemble = diverse_ensemble
         self.stack_probabilities = stack_probabilities
+        self.data_info = data_info
+        self.balance_class_dist = balance_class_dist
 
     def update(self, options):
         for k, v in options.items():

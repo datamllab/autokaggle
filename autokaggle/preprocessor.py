@@ -16,7 +16,7 @@ from autokaggle.estimators import Config
 LEVEL_HIGH = 32
 
 
-class TabularPreprocessor:
+class TabularPreprocessor(TransformerMixin):
     def __init__(self, config):
         """
         Initialization function for tabular preprocessor.
@@ -25,7 +25,7 @@ class TabularPreprocessor:
         self.pipeline = None
         self.config = config
 
-    def fit(self, raw_x, y, data_info):
+    def fit(self, raw_x, y):
         """
         This function should train the model parameters.
 
@@ -38,16 +38,13 @@ class TabularPreprocessor:
                      'TIME' for temporal feature, 'NUM' for other numerical feature,
                      and 'CAT' for categorical feature.
         """
-        # Extract or read data info
-        self.data_info = data_info if data_info is not None else self.extract_data_info(raw_x)
-
-        data = TabularData(raw_x, self.data_info, self.config.verbose)
+        data = TabularData(raw_x, self.config.data_info, self.config.verbose)
 
         self.pipeline = Pipeline([
             ('imputer', Imputation(selected_type='ALL', operation='upd')),
             # ('cat_num_encoder', CatNumEncoder(selected_type1='CAT', selected_type2='NUM')),
             # ('cat_num_encoder', CatCatEncoder(selected_type1='CAT', selected_type2='CAT')),
-            ('target_encoder', TargetEncoder(selected_type='CAT', operation='add')),
+            ('target_encoder', TargetEncoder(selected_type='CAT', operation='upd')),
             # ('count_encoder', CatCount(selected_type='CAT', operation='upd')),
             # ('one_hot_encoder', OneHot(selected_type='CAT', operation='upd')),
             # ('label_encoder', LabelEncode(selected_type='CAT', operation='upd')),
@@ -78,27 +75,9 @@ class TabularPreprocessor:
         NOT be available for re-training.
         """
         # Get Meta-Feature
-        data = TabularData(raw_x, self.data_info, self.config.verbose)
+        data = TabularData(raw_x, self.config.data_info, self.config.verbose)
         a = self.pipeline.transform(data).X
         return a.values
-
-    @staticmethod
-    def extract_data_info(raw_x):
-        """
-        This function extracts the data info automatically based on the type of each feature in raw_x.
-
-        Args:
-            raw_x: a numpy.ndarray instance containing the training data.
-        """
-        data_info = []
-        row_num, col_num = raw_x.shape
-        for col_idx in range(col_num):
-            try:
-                raw_x[:, col_idx].astype(np.float)
-                data_info.append('NUM')
-            except:
-                data_info.append('CAT')
-        return np.array(data_info)
 
 
 class TabularData:
@@ -126,12 +105,6 @@ class TabularData:
 
         self.X = raw_x
         # self.update_cat_cardinality()
-
-        if self.verbose:
-            print('DATA_INFO: {}'.format(self.data_info))
-            print('#TIME features: {}'.format(self.n_time))
-            print('#NUM features: {}'.format(self.n_num))
-            print('#CAT features: {}'.format(self.n_cat))
 
     def update_type(self, columns, new_type):
         for c in columns:
