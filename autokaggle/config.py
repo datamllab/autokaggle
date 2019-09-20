@@ -1,5 +1,6 @@
 from sklearn.base import BaseEstimator
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir
+import hyperopt
 from hyperopt import hp
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -12,10 +13,10 @@ import numpy as np
 
 
 class Config:
-    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
-                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=500, cv_folds=3,
+    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=False, num_estimators_ensemble=50,
+                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=5, cv_folds=3,
                  subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False,
-                 data_info=None, balance_class_dist=False):
+                 data_info=None, balance_class_dist=False, ensembling_search_iter=10, ensembling_algo='random'):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
         ensure_dir(self.path)
@@ -41,6 +42,8 @@ class Config:
         self.stack_probabilities = stack_probabilities
         self.data_info = data_info
         self.balance_class_dist = balance_class_dist
+        self.ensembling_search_iter = ensembling_search_iter
+        self.ensembling_algo = hyperopt.rand.suggest if ensembling_algo == 'random' else hyperopt.tpe.suggest
 
     def update(self, options):
         for k, v in options.items():
@@ -205,4 +208,66 @@ classification_hspace = {
         'model': CatBoostClassifier,
         'param': catboost_classifier_params
     }
+}
+
+classification_hspace_base = {
+    'knn': {
+        'model': KNeighborsClassifier,
+        'param': {}
+    },
+    'svm': {
+        'model': SVC,
+        'param': {}
+    },
+    'random_forest': {
+        'model': RandomForestClassifier,
+        'param': {}
+    },
+    'lgbm': {
+        'model': LGBMClassifier,
+        'param': {}
+    },
+    'adaboost': {
+        'model': AdaBoostClassifier,
+        'param': {}
+    },
+    'catboost': {
+        'model': CatBoostClassifier,
+        'param': {}
+    }
+}
+
+regression_hspace_base = {
+    'extratree': {
+        'model': ExtraTreesRegressor,
+        'param': {}
+    },
+    'ridge': {
+        'model': Ridge,
+        'param': {}
+    },
+    'random_forest': {
+        'model': RandomForestRegressor,
+        'param': {}
+    },
+    'lgbm': {
+        'model': LGBMRegressor,
+        'param': {}
+    },
+    'adaboost': {
+        'model': AdaBoostRegressor,
+        'param': {}
+     },
+    'catboost': {
+        'model': CatBoostRegressor,
+        'param': {}
+    }
+}
+
+regression_p_hspace_base = {
+
+}
+
+classification_p_hspace_base = {
+
 }

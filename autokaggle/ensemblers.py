@@ -112,8 +112,8 @@ class StackingEnsembler:
             return {'loss': 1 - eval_score, 'status': STATUS_OK, 'space': args}
 
         trials = Trials()
-        best = fmin(objective_func, self.hparams, algo=hyperopt.rand.suggest, trials=trials,
-                    max_evals=50)
+        best = fmin(objective_func, self.hparams, algo=self.config.ensembling_algo, trials=trials,
+                    max_evals=self.config.ensembling_search_iter)
 
         opt = space_eval(self.hparams, best)
         best_estimator_ = opt['model'](**opt['param'])

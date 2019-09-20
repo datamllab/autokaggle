@@ -10,7 +10,8 @@ from joblib import dump, load
 from autokaggle.preprocessor import TabularPreprocessor
 from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
 from lightgbm import LGBMClassifier, LGBMRegressor
-from autokaggle.config import Config, classification_hspace, regression_hspace
+from autokaggle.config import Config, classification_hspace, regression_hspace, classification_hspace_base,\
+    regression_hspace_base, regression_p_hspace_base, classification_p_hspace_base
 from sklearn.model_selection import StratifiedKFold, KFold
 import hyperopt
 from hyperopt import tpe, hp, fmin, Trials, STATUS_OK, STATUS_FAIL
@@ -23,7 +24,9 @@ import collections
 # TODO: Further clean the design of this file
 class AutoKaggle(BaseEstimator):
     pipeline = None
-    hparams = None
+    m_hparams = None
+    m_hparams_base = None
+    p_hparams_base = None
 
     def __init__(self, config=None, **kwargs):
         """
@@ -72,8 +75,13 @@ class AutoKaggle(BaseEstimator):
             self.config.objective = 'binary' if n_classes == 2 else 'multiclass'
 
         # self.pipeline = AutoPipe(LGBMClassifier, {}, {}, self.config)
-        prep_space = {'prep': hp.choice('data_source', ['a', 'b'])}
-        self.pipeline = self.get_best_pipeline(self.search(x, y, prep_space, self.hparams))
+        # Search the top preprocessing setting
+        trials = self.search(x, y, self.p_hparams_base, self.m_hparams_base)
+        p_hparams = self.get_top_prep(trials)
+        # Search the best pipelines
+        trials = self.search(x, y, p_hparams, self.m_hparams_base)
+        self.pipeline = self.get_best_pipeline(trials)
+        # Fit data
         self.pipeline.fit(x, y)
         self.is_trained = True
 
@@ -153,7 +161,7 @@ class AutoKaggle(BaseEstimator):
 
         trials = Trials()
         search_space = {'prep': prep_space, 'estimator': model_space}
-        _ = fmin(objective_func, search_space, algo=hyperopt.rand.suggest, trials=trials,
+        _ = fmin(objective_func, search_space, algo=self.config.ensembling_algo, trials=trials,
                  max_evals=self.config.search_iter)
         return trials
 
@@ -167,6 +175,9 @@ class AutoKaggle(BaseEstimator):
                 print("The best hyperparameter setting found:")
                 print(opt)
         return best_pipeline
+
+    def get_top_prep(self, trials):
+        return hp.choice('p_params', [res['p_params'] for res in trials.results])
 
     @abstractmethod
     def get_skf(self, folds):
@@ -236,7 +247,10 @@ class AutoKaggleClassifier(AutoKaggle):
     def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
         self.config.objective = 'classification'
-        self.hparams = hp.choice('classifier', [classification_hspace[m] for m in self.config.classification_models])
+        self.m_hparams = hp.choice('classifier', [classification_hspace[m] for m in self.config.classification_models])
+        self.m_hparams_base = hp.choice('classifier',
+                                     [classification_hspace_base[m] for m in self.config.classification_models])
+        self.p_hparams_base = classification_p_hspace_base
 
     def get_skf(self, folds):
         if self.config.objective == 'binary':
@@ -252,7 +266,10 @@ class AutoKaggleRegressor(AutoKaggle):
     def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
         self.config.objective = 'regression'
-        self.hparams = hp.choice('regressor', [regression_hspace[m] for m in self.config.regression_models])
+        self.m_hparams = hp.choice('regressor', [regression_hspace[m] for m in self.config.regression_models])
+        self.m_hparams_base = hp.choice('regressor',
+                                     [regression_hspace_base[m] for m in self.config.classification_models])
+        self.p_hparams_base = regression_p_hspace_base
 
     def get_skf(self, folds):
         return 'neg_mean_squared_error', KFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
