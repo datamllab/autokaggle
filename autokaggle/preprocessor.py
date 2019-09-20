@@ -12,17 +12,17 @@ from sklearn.pipeline import Pipeline
 from abc import abstractmethod
 import collections
 from lightgbm import LGBMClassifier, LGBMRegressor
-from autokaggle.estimators import Config
 LEVEL_HIGH = 32
 
 
 class TabularPreprocessor(TransformerMixin):
+    pipeline = None
+    data_info = None
+
     def __init__(self, config):
         """
         Initialization function for tabular preprocessor.
         """
-        self.data_info = None
-        self.pipeline = None
         self.config = config
 
     def fit(self, raw_x, y):
@@ -41,23 +41,23 @@ class TabularPreprocessor(TransformerMixin):
         data = TabularData(raw_x, self.config.data_info, self.config.verbose)
 
         self.pipeline = Pipeline([
-            ('imputer', Imputation(selected_type='ALL', operation='upd')),
-            # ('cat_num_encoder', CatNumEncoder(selected_type1='CAT', selected_type2='NUM')),
-            # ('cat_num_encoder', CatCatEncoder(selected_type1='CAT', selected_type2='CAT')),
-            ('target_encoder', TargetEncoder(selected_type='CAT', operation='upd')),
-            # ('count_encoder', CatCount(selected_type='CAT', operation='upd')),
-            # ('one_hot_encoder', OneHot(selected_type='CAT', operation='upd')),
-            # ('label_encoder', LabelEncode(selected_type='CAT', operation='upd')),
-            ('scaler', TabScaler(selected_type='NUM', operation='upd')),
-            # ('boxcox', BoxCox(selected_type='NUM', operation='upd')),
-            # ('log_transform', LogTransform(selected_type='NUM', operation='upd')),
-            # ('binning', Binning(selected_type='NUM', operation='upd')),
-            # ('pca', TabPCA(selected_type='NUM', operation='add')),
-            # ('time_diff', TimeDiff(selected_type='TIME', operation='add')),
-            # ('time_offset', TimeOffset(selected_type='TIME', operation='upd')),
-            ('filter', FilterConstant(selected_type='ALL', operation='del')),
-            # ('pearson_corr', FeatureFilter(selected_type='ALL', operation='del')),
-            # ('lgbm_feat_selection', FeatureImportance(selected_type='ALL', operation='del')),
+            ('imputer', Imputation(operation='upd', selected_type='ALL')),
+            # ('cat_num_encoder', CatNumEncoder(operation='add', selected_type1='CAT', selected_type2='NUM')),
+            # ('cat_cat_encoder', CatCatEncoder(operation='add', selected_type1='CAT', selected_type2='CAT')),
+            ('target_encoder', TargetEncoder(operation='upd', selected_type='CAT')),
+            # ('count_encoder', CatCount(operation='upd', selected_type='CAT')),
+            # ('one_hot_encoder', OneHot(operation='upd', selected_type='CAT')),
+            # ('label_encoder', LabelEncode(operation='upd', selected_type='CAT')),
+            ('scaler', TabScaler(operation='upd', selected_type='NUM')),
+            # ('boxcox', BoxCox(operation='upd', selected_type='NUM')),
+            # ('log_transform', LogTransform(operation='upd', selected_type='NUM')),
+            # ('binning', Binning(operation='upd', selected_type='NUM')),
+            # ('pca', TabPCA(operation='add', selected_type='NUM')),
+            # ('time_diff', TimeDiff(operation='add', selected_type='TIME')),
+            # ('time_offset', TimeOffset(operation='upd', selected_type='TIME')),
+            ('filter', FilterConstant(operation='del', selected_type='ALL')),
+            # ('pearson_corr', FeatureFilter(operation='del', selected_type='ALL')),
+            # ('lgbm_feat_selection', FeatureImportance(operation='del', selected_type='ALL')),
         ])
         self.pipeline.fit(data, y)
 
@@ -179,7 +179,7 @@ class Primitive(BaseEstimator, TransformerMixin):
     supported_ops = ('add', 'upd', 'del')
     name_key = ''
 
-    def __init__(self, selected_type=None, operation='upd', **kwargs):
+    def __init__(self, operation='upd', selected_type=None, **kwargs):
         self.selected_type = selected_type
         self.operation = operation
         self.init_vars(**kwargs)
@@ -211,10 +211,48 @@ class Primitive(BaseEstimator, TransformerMixin):
         pass
 
 
-class PrimitiveHigherOrder(Primitive):
-    def __init__(self, operation='upd', selected_type=None, selected_type2=None, **kwargs):
-        super().__init__(selected_type, operation, **kwargs)
+class PrimitiveHigherOrder:
+    selected_1 = None
+    selected_2 = None
+    drop_columns = None
+    options = None
+    supported_ops = ('add', 'upd', 'del')
+    name_key = ''
+
+    def __init__(self, operation='upd', selected_type1=None, selected_type2=None, **kwargs):
+        self.operation = operation
+        self.selected_type1 = selected_type1
         self.selected_type2 = selected_type2
+        self.init_vars(**kwargs)
+        self.name_key = self.__class__.__name__
+
+    def init_vars(self, **kwargs):
+        self.options = kwargs
+
+    def fit(self, data, y=None):
+        self.selected_1 = data.select_columns(self.selected_type1)
+        self.selected_2 = data.select_columns(self.selected_type2)
+
+        if self.operation not in self.supported_ops:
+            print("Operation {} not supported for {}".format(self.operation, self.__class__.__name__))
+            self.selected_1 = None
+            self.selected_2 = None
+        if not self.selected_1 or not self.selected_2:
+            return self
+        return self._fit(data, y)
+
+    def transform(self, data, y=None):
+        if not self.selected_1 or not self.selected_2:
+            return data
+        return self._transform(data, y)
+
+    @abstractmethod
+    def _fit(self, data, y=None):
+        pass
+
+    @abstractmethod
+    def _transform(self, data, y=None):
+        pass
 
 
 class TabScaler(Primitive):
@@ -345,7 +383,9 @@ class TargetEncoder(Primitive):
 
 
 class CatCatEncoder(PrimitiveHigherOrder):
-    supported_ops = ('add', 'upd')
+    supported_ops = ('add', )
+    cat_cat_map = None
+
     @staticmethod
     def cat_cat_count(df, col1, col2, strategy='count'):
         if strategy == 'count':
@@ -359,28 +399,23 @@ class CatCatEncoder(PrimitiveHigherOrder):
     def _fit(self, data, y=None):
         self.cat_cat_map = {}
         self.strategy = self.options.get('strategy', 'count')
-        for col1, col2 in itertools.combinations(self.selected, 2):
+        self.selected_1 = list(set(self.selected_1 + self.selected_2))
+        for col1, col2 in itertools.combinations(self.selected_1, 2):
             self.cat_cat_map[col1 + '_cross_' + col2] = self.cat_cat_count(data.X, col1, col2, self.strategy)
         return self
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
-        for col1, col2 in itertools.combinations(self.selected, 2):
+        for col1, col2 in itertools.combinations(self.selected_1, 2):
             if col1 + '_cross_' + col2 in self.cat_cat_map:
                 x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_cat_map[col1 + '_cross_' + col2])
-        # TODO: decide new_type
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        data.update(self.operation, self.selected_1, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
 class CatNumEncoder(PrimitiveHigherOrder):
-    supported_ops = ('add', 'upd')
-
-    def __init__(self, selected_type=None, selected_num=[], operation='add', strategy='mean'):
-        super().__init__(selected_type, operation)
-        self.selected_num = selected_num
-        self.strategy = strategy
-        self.cat_num_map = {}
+    supported_ops = ('add', )
+    cat_num_map = None
 
     @staticmethod
     def cat_num_interaction(df, col1, col2, method='mean'):
@@ -400,23 +435,24 @@ class CatNumEncoder(PrimitiveHigherOrder):
     def _fit(self, data, y=None):
         self.cat_num_map = {}
         self.strategy = self.options.get('strategy', 'mean')
-        for col1 in self.selected:
-            for col2 in self.selected_num:
+        for col1 in self.selected_1:
+            for col2 in self.selected_2:
                 self.cat_num_map[col1 + '_cross_' + col2] = self.cat_num_interaction(data.X, col1, col2, self.strategy)
         return self
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
-        for col1 in self.selected:
-            for col2 in self.selected_num:
+        for col1 in self.selected_1:
+            for col2 in self.selected_2:
                 if col1 + '_cross_' + col2 in self.cat_num_map:
                     x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_num_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        data.update(self.operation, self.selected_1, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
 class CatBinEncoder(PrimitiveHigherOrder):
-    supported_ops = ('add', 'upd')
+    supported_ops = ('add', )
+    cat_bin_map = None
 
     @staticmethod
     def cat_bin_interaction(df, col1, col2, strategy='percent_true'):
@@ -431,18 +467,18 @@ class CatBinEncoder(PrimitiveHigherOrder):
     def _fit(self, data, y=None):
         self.cat_bin_map = {}
         self.strategy = self.options.get('strategy', 'percent_true')
-        for col1 in self.selected:
-            for col2 in self.selected_bin:
+        for col1 in self.selected_1:
+            for col2 in self.selected_2:
                 self.cat_bin_map[col1 + '_cross_' + col2] = self.cat_bin_interaction(data.X, col1, col2, self.strategy)
         return self
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
-        for col1 in self.selected:
-            for col2 in self.selected_bin:
+        for col1 in self.selected_1:
+            for col2 in self.selected_2:
                 if col1 + '_cross_' + col2 in self.cat_bin_map:
                     x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_bin_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        data.update(self.operation, self.selected_1, x_tr, new_type='NUM', key=self.name_key)
         return data
 
 
