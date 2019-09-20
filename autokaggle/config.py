@@ -13,10 +13,11 @@ import numpy as np
 
 
 class Config:
-    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=False, num_estimators_ensemble=50,
-                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=5, cv_folds=3,
+    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
+                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=500, cv_folds=3,
                  subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False,
-                 data_info=None, balance_class_dist=False, ensembling_search_iter=10, ensembling_algo='random'):
+                 data_info=None, balance_class_dist=False, ensembling_search_iter=10, ensembling_algo='random',
+                 num_p_hparams=10):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
         ensure_dir(self.path)
@@ -44,6 +45,7 @@ class Config:
         self.balance_class_dist = balance_class_dist
         self.ensembling_search_iter = ensembling_search_iter
         self.ensembling_algo = hyperopt.rand.suggest if ensembling_algo == 'random' else hyperopt.tpe.suggest
+        self.num_p_hparams = num_p_hparams
 
     def update(self, options):
         for k, v in options.items():

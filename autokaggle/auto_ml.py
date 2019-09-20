@@ -77,7 +77,7 @@ class AutoKaggle(BaseEstimator):
         # self.pipeline = AutoPipe(LGBMClassifier, {}, {}, self.config)
         # Search the top preprocessing setting
         trials = self.search(x, y, self.p_hparams_base, self.m_hparams_base)
-        p_hparams = self.get_top_prep(trials)
+        p_hparams = self.get_top_prep(trials, self.config.num_p_hparams)
         # Search the best pipelines
         trials = self.search(x, y, p_hparams, self.m_hparams_base)
         self.pipeline = self.get_best_pipeline(trials)
@@ -176,8 +176,19 @@ class AutoKaggle(BaseEstimator):
                 print(opt)
         return best_pipeline
 
-    def get_top_prep(self, trials):
-        return hp.choice('p_params', [res['p_params'] for res in trials.results])
+    @staticmethod
+    def get_top_prep(trials, n):
+        best_trials = [t for t in trials.results if t['loss'] != float('inf')]
+        best_trials = sorted(best_trials, key=lambda k: k['loss'], reverse=False)
+        top_p_hparams, count = [], 0
+        for trial in best_trials:
+            if trial['p_params'] not in top_p_hparams:
+                top_p_hparams.append(trial)
+                count += 1
+                if count > n:
+                    break
+
+        return hp.choice('p_params', top_p_hparams)
 
     @abstractmethod
     def get_skf(self, folds):
