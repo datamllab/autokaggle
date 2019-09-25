@@ -16,6 +16,7 @@ import openml
 openml.config.apikey = '3c7196c92a274c3b9405a7e26e9f848e'
 import warnings
 from abc import abstractmethod
+import statistics
 
 
 def generate_rand_string(size):
@@ -24,6 +25,20 @@ def generate_rand_string(size):
 
 
 class BenchmarkingBase:
+    """ Base class for benchmarking autoML platforms.
+
+        This class benchmarks the performance of the given autoML platform. The user can call evaluate() method to
+        evaluate the performance on a single task or run_automation() for the list of the tasks. The tasks are OpenML
+        tasks, which specify the dataset and the train/test/validation folds etc.
+
+        # Arguments
+            results: List. List of the results for each evaluation
+            sess_name: String. Name of the evaluation session, used for storing the results.
+            cls_desc: List. List of the columns to be added in classification result
+            rgs_desc: List. List of the columns to be added in regression result
+            cls_results: DataFrame. Table storing the classification results
+            rgs_results: DataFrame. Table storing the regression results
+    """
     results = None
     cls_desc = ["automl_model", "task_id", "time_limit", "accuracy", "balanced_accuracy", "F1_score", "AUC"]
     rgs_desc = ["automl_model", "task_id", "time_limit", "MSE", "MAE", "R2_score"]
@@ -37,6 +52,14 @@ class BenchmarkingBase:
         self.rgs_results = pd.DataFrame(columns=self.rgs_desc)
         
     def measure_performance_cls(self, y_true, y_pred, binary=False):
+        """ Calculate the performance of the classification task
+        # Arguments
+            y_true: A numpy array containing the ground truth labels
+            y_pred: A numpy array containing the predicted labels
+            binary: Boolean specifying if the objective isbinary or multiclass
+        # Returns
+            list of the performance scores based on various evaluation metrics.
+        """
         accuracy = accuracy_score(y_true, y_pred)
         ber = balanced_accuracy_score(y_true, y_pred)
         f1 = f1_score(y_true, y_pred, average="binary") if binary else f1_score(y_true, y_pred, average="weighted")
@@ -44,12 +67,25 @@ class BenchmarkingBase:
         return [accuracy, ber, f1, auc]
 
     def measure_performance_rgs(self, y_true, y_pred):
+        """ Calculate the performance of the regression task
+        # Arguments
+            y_true: A numpy array containing the ground truth
+            y_pred: A numpy array containing the predicted values
+        # Returns
+            list of the performance scores based on various evaluation metrics.
+        """
         mse = mean_squared_error(y_true, y_pred)
         mae = mean_absolute_error(y_true, y_pred)
         r2 = r2_score(y_true, y_pred)
         return [mse, mae, r2]
     
     def export_results(self):
+        """ Writes the results to a CSV file.
+        # Arguments
+            None
+        # Returns
+            None
+        """
         if len(self.cls_results) > 0:
             self.cls_results.to_csv(self.sess_name + "_classification_results.csv", index=False)
         if len(self.rgs_results) > 0:
@@ -57,9 +93,23 @@ class BenchmarkingBase:
     
     @abstractmethod
     def evaluate(self, task, time_limit):
+        """ Evaluates the performance of the single task.
+        # Arguments
+            task: Id of the OpenML task flow
+            time_limit: Budget for the given task
+        # Returns
+            List of performance scores of the autoML system on the given task.
+        """
         pass
         
     def run_automation(self, task_list, time_limit=10*60):
+        """ Evaluate the list of the tasks in sequence
+        # Arguments
+            task_list: List of OpenML task ids
+            time_limit: Budget for each of the task
+        # Returns
+            None
+        """
         for task in task_list:
             try:
                 self.evaluate(task, time_limit=time_limit)
@@ -68,12 +118,27 @@ class BenchmarkingBase:
                 print("task: {} didnt work".format(task))
                 
     def time_lapse(self, task_id, time_limits=[30, 40, 50, 60, 90, 120, 150, 180, 240, 300]):
+        """ Evaluate the task on different time_limits
+        # Arguments
+            task_id: Id of the OpenML task flow
+            time_limits: List of the time_limits to test the performance on
+        # Returns
+            List of combined results of the autoML on each of the time_limit
+        This function evaluates and compares the performance of the autoML system on different time_limits. It is
+        helpful to understand the amount of improvement with increase in time budget
+        """
         tl_results = []
         for time_limit in time_limits:
             tl_results.append(self.evaluate(task_id, time_limit=time_limit))
         return tl_results
     
     def get_dataset_splits(self, task_id):
+        """ Get the train/test splits for the given task
+        # Arguments
+            task_id: Id of OpenML task flow
+        # Returns
+            Train/Test datasets in numpy array format
+        """
         task = openml.tasks.get_task(task_id)
         train_indices, test_indices = task.get_train_test_split_indices()
         dataset = task.get_dataset()
@@ -85,12 +150,18 @@ class BenchmarkingBase:
     
     
 class BenchmarkingAutoKaggle(BenchmarkingBase):
-    estimator_type = None
-    
-    def set_estimator_type(self, est_type):
-        self.estimator_type = est_type
-        
+    """ Extends the benchmarking class for evaluating AutoKaggle.
+
+        This class evaluates the performance of AutoKaggle on the input classification or regression task_list.
+    """
     def get_data_info(self, dataset, num_cols):
+        """ Get the info of each feature data type
+        # Arguments
+            dataset: dataset id in OpenML
+            num_cols: Total number of columns
+        # Returns
+            A numpy array containing the data_type of each feature column
+        """
         nominal_feat = dataset.get_features_by_type('nominal')
         numerical_feat = dataset.get_features_by_type('numeric')
         string_feat = dataset.get_features_by_type('string')
@@ -107,6 +178,9 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
         return np.array(data_info)
     
     def evaluate(self, task_id, time_limit=10*60):
+        """
+            See base class.
+        """
         task_info = ["autokaggle", task_id, time_limit]
         task = openml.tasks.get_task(task_id)
         train_indices, test_indices = task.get_train_test_split_indices()
@@ -121,9 +195,9 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
 
         # Train
         if task.task_type == 'Supervised Classification':
-            automl = AutoKaggleClassifier()
+            automl = Classifier()
         elif task.task_type == 'Supervised Regression':
-            automl = AutoKaggleRegressor()
+            automl = Regressor()
         else:
             print("UNSUPPORTED TASK_TYPE")
             assert(0)
@@ -145,6 +219,10 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
 
 #
 # class BenchmarkingAutoSklearn(BenchmarkingBase):
+    """ Extends the benchmarking class for evaluating AutoSklearn.
+    
+        This class evaluates the performance of AutoKaggle on the input classification or regression task_list.
+    """
 #     def get_data_info(self, categorical_indicator):
 #         return ['Categorical' if ci else 'Numerical' for ci in categorical_indicator]
 #
@@ -187,14 +265,29 @@ class BenchmarkingAutoKaggle(BenchmarkingBase):
 #         self.results.append(result)
 #         print(result)
 #         return result
-    
+
+
 def get_dataset_ids(task_ids):
+    """ Fetches the dataset_ids.
+    # Arguments
+        task_ids: List of ids of OpenML task flows
+    # Returns
+        dataset_list: List of the dataset Ids
+    """
     if type(task_ids) == list:
-        return  [openml.tasks.get_task(t_id).dataset_id for t_id in task_ids]
+        return [openml.tasks.get_task(t_id).dataset_id for t_id in task_ids]
     else:
-        return  openml.tasks.get_task(task_ids).dataset_id
+        return openml.tasks.get_task(task_ids).dataset_id
+
 
 def get_task_info(task_ids):
+    """ Fetches the dataset_ids and the task objective.
+    # Arguments
+        task_ids: List of ids of OpenML task flows.
+    # Returns
+        dataset_list: List of the dataset Ids.
+        task_types: List of the task type (such as 'binary/multiclass classification' or 'regression'
+    """
     task_types = []
     dataset_list = []
     for i, t_id in enumerate(task_ids):
@@ -211,6 +304,13 @@ def get_task_info(task_ids):
 
 
 def get_dataset_properties(task_ids):
+    """ Fetches the properties of the dataset for given task flow id
+    # Arguments
+        task_ids: List of ids of OpenML task flows
+    # Returns
+        Dataframe containing the info of each of the dataset.
+    This function provides the dataset info such as number of instances, number of numeric/nominal/string columns etc.
+    """
     dataset_list, task_types = get_task_info(task_ids)
     df = pd.DataFrame(columns=["Name", "#Samples", "Task_Type", "#Numeric", "#Nominal", "#String", "#Date"])
     for i, dataset in enumerate(dataset_list):
@@ -225,9 +325,16 @@ def get_dataset_properties(task_ids):
         ]
     return df
 
+
 def get_performance_table(filename, metric):
-    """
-    Read the results csv and convert into the performance table based on the median of the results for each task.
+    """ Generates a comprehensive report table of AutoML performance.
+    # Arguments
+        filename: A csv file containing the results of AutoML runs
+        metric: Scoring metric to be used for comparison
+    # Returns
+        Pandas Dataframe listing the performance of different AutoML systems on the given datasets.
+    This function reads the results csv and converts it into the performance table based on the median of the results
+    for each task.
     """
     test = pd.read_csv(filename)
     perf = pd.DataFrame(columns=["Name", "AutoKaggle", "AutoSklearn", "H2O.ai"])
@@ -247,27 +354,37 @@ def get_performance_table(filename, metric):
             print(e)
     return perf
 
+
 def style_results(res):
-    """
-    Highlight the max results and set index to name
+    """ Highlights the best result in the results column
+    # Arguments
+        res: Dataframe containing the results of various AutoML runs
+    # Returns
+        Highlighed data-frame
     """
     def highlight_max(s):
-        '''
-        highlight the maximum in a Series yellow.
-        '''
+        """
+        Highlight the maximum in a Series yellow.
+        """
         is_max = s == s.max()
         return ['background-color: yellow' if v else '' for v in is_max]
     res = res.set_index("Name")
     res.style.apply(highlight_max, axis=1)
     return res
 
-import statistics
-def get_box_plot(data, task_id, metric):
+
+def get_box_plot(results, task_id, metric):
+    """ Generates a box plot of the variance in the result.
+    # Arguments
+        results: Results of various runs using AutoML systems
+        task_id: Id for OpenML task flow
+        metric: Score metric considered for the box-plot
+    # Returns
+        None
+    Builds and displays the box plot showing the variance in results for the AutoML performance on the given dataset.
     """
-    Plots the boxplot of variance
-    """
-    auto_sklearn = list(data.loc[(task_id, "autosklearn")][metric])
-    auto_kaggle = list(data.loc[(task_id, "autokaggle")][metric])
+    auto_sklearn = list(results.loc[(task_id, "autosklearn")][metric])
+    auto_kaggle = list(results.loc[(task_id, "autokaggle")][metric])
     med_sk = statistics.median(auto_sklearn)
     med_ak = statistics.median(auto_kaggle)
     while len(auto_sklearn) < len(auto_kaggle):
@@ -290,8 +407,10 @@ if __name__ == "__main__":
     #     ak.run_automation(classification_task_list)
     # t2 = time.time()
     # print(t2-t1)
+    np.random.seed(1001)
+    random.seed(1001)
     import time
     t1 = time.time()
-    ak.evaluate(31)
+    ak.evaluate(3021)
     t2 = time.time()
     print(t2-t1)

@@ -13,10 +13,35 @@ import numpy as np
 
 
 class Config:
+    """ Configuration for various autoML components.
+
+        Defines the common configuration of different auto ML components. It is shared between AutoKaggle, AutoPipe,
+        Preprocessor and Ensembling class.
+
+        # Arguments
+            path: String. OS path for storing temporary model parameters.
+            verbose: Bool. Defines the verbosity of the logging.
+            time_limit: Int. Time budget for performing search and fit pipeline.
+            use_ensembling: Bool. Defines whether to use an ensemble of models
+            num_estimators_ensemble: Int. Maximum number of estimators to be used in an ensemble
+            ensemble_strategy: String. Strategy to ensemble models
+            ensemble_method: String. Aggregation method if ensemble_strategy is set to ranked_ensembling
+            random_ensemble: Bool. Whether the ensembling estimators are picked randomly.
+            diverse_ensemble: Bool. Whether estimators from different families are picked.
+            ensembling_search_iter: Int. Search iterations for ensembling hyper-parameter search
+            search_algo: String. Search strategy for hyper-parameter search.
+            search_iter: Int. Number of iterations used for hyper-parameter search.
+            cv_folds: Int. Number of Cross Validation folds.
+            subsample_ratio: Percent of subsample used for for hyper-parameter search.
+            data_info: list(String). Lists the datatypes of each feature column.
+            stack_probabilities: Bool. Whether to use class probabilities in ensembling.
+            upsample_classes: Bool. Whether to upsample less represented classes
+            num_p_hparams: Int. Number of preprocessor search spaces.
+    """
     def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
                  ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=500, cv_folds=3,
                  subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False,
-                 data_info=None, balance_class_dist=False, ensembling_search_iter=10, ensembling_algo='random',
+                 data_info=None, upsample_classes=False, ensembling_search_iter=10, search_algo='random',
                  num_p_hparams=10):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
@@ -42,9 +67,9 @@ class Config:
         self.diverse_ensemble = diverse_ensemble
         self.stack_probabilities = stack_probabilities
         self.data_info = data_info
-        self.balance_class_dist = balance_class_dist
+        self.upsample_classes = upsample_classes
         self.ensembling_search_iter = ensembling_search_iter
-        self.ensembling_algo = hyperopt.rand.suggest if ensembling_algo == 'random' else hyperopt.tpe.suggest
+        self.search_algo = hyperopt.rand.suggest if search_algo == 'random' else hyperopt.tpe.suggest
         self.num_p_hparams = num_p_hparams
 
     def update(self, options):
@@ -53,14 +78,14 @@ class Config:
                 setattr(self, k, v)
 
 
-knn_classifier_params = {
+KNN_CLASSIFIER_PARAMS = {
     'n_neighbors': hp.choice('n_neighbors_knn', [1, 2, 4, 8, 16, 32, 64, 100]),
     'weights': hp.choice('weight_knn', ['uniform', 'distance']),
     'metric': hp.choice('metric_knn', ["euclidean", "manhattan", "chebyshev", "minkowski"]),
     'p': hp.choice('p_knn', range(1, 3)),
 }
 
-svc_params = {
+SVM_CLASSIFIER_PARAMS = {
     'C': hp.loguniform('C_svm', np.log(0.03125), np.log(32768)),
     'kernel': hp.choice('kernel_svm', ['rbf', 'poly', 'sigmoid']),
     'degree': hp.choice('degree_svm', range(2, 6)),
@@ -68,7 +93,7 @@ svc_params = {
     'max_iter': 50000,
 }
 
-random_forest_classifier_params = {
+RANDOM_FOREST_CLASSIFIER_PARAMS = {
     'criterion': hp.choice('criterion_rf', ['entropy', 'gini']),
     'max_features': hp.uniform('max_features_rf', 0, 1.0),
     'n_estimators': hp.choice('n_estimators_rf', [100, 50]),
@@ -76,7 +101,7 @@ random_forest_classifier_params = {
     'min_samples_split': hp.choice('min_samples_split_rf', range(2, 20)),
 }
 
-lgbm_classifier_params = {
+LGBM_CLASSIFIER_PARAMS = {
     'boosting_type': 'gbdt',
     'min_split_gain': 0.1,
     'subsample': 0.8,
@@ -88,13 +113,13 @@ lgbm_classifier_params = {
     'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-2), high=np.log(2)),
 }
 
-adaboost_classifier_params = {
+ADABOOST_CLASSIFIER_PARAMS = {
     'algorithm': hp.choice('algorithm_adaboost', ['SAMME.R', 'SAMME']),
     'n_estimators': hp.choice('n_estimators_adaboost', range(50, 500)),
     'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2), high=np.log(2)),
 }
 
-catboost_classifier_params = {
+CATBOOST_CLASSIFIER_PARAMS = {
     'iterations': hp.choice('iterations_catboost', [5, 10]),
     'depth': hp.choice('depth_catboost', range(4, 11)),
     'learning_rate': hp.loguniform('learning_rate_catboost', low=np.log(1e-3), high=np.log(1)),
@@ -104,7 +129,7 @@ catboost_classifier_params = {
     'l2_leaf_reg': hp.choice('l2_leaf_reg_catboost', np.logspace(-20, -19, 3))
 }
 
-extra_trees_regressor_params = {
+EXTRA_TREES_REGRESSOR_PARAMS = {
     'n_estimators': hp.choice('n_estimators_extra_trees', [50, 100, 200]),
     'criterion': hp.choice('criterion_extra_trees', ['mse', 'friedman_mse', 'mae']),
     'max_features': hp.uniform('max_features_extra_trees', 0, 1.0),
@@ -114,13 +139,13 @@ extra_trees_regressor_params = {
     'bootstrap': hp.choice('bootstrap_extra_trees', [True, False]),
 }
 
-ridge_params = {
+RIDGE_REGRESSOR_PARAMS = {
     'fit_intercept': True,
     'tol': hp.loguniform('tol_ridge', 1e-5, 1e-1),
     'alpha': hp.loguniform('alpha_ridge', np.log(1e-5), np.log(10))
 }
 
-random_forest_regressor_params = {
+RANDOM_FOREST_REGRESSOR_PARAMS = {
     'criterion': hp.choice('criterion_rf', ['mse', 'friedman_mse', 'mae']),
     'max_features': hp.uniform('max_features_rf', 0.1, 1.0),
     'n_estimators': hp.choice('n_estimators_rf', [50, 100, 200]),
@@ -129,7 +154,7 @@ random_forest_regressor_params = {
     'bootstrap': hp.choice('bootstrap_rf', [True, False]),
 }
 
-lgbm_regressor_params = {
+LGBM_REGRESSOR_PARAMS = {
     'boosting_type': 'gbdt',
     'min_split_gain': 0.1,
     'subsample': 0.8,
@@ -141,14 +166,14 @@ lgbm_regressor_params = {
     'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-5), high=np.log(1)),
 }
 
-adaboost_regressor_params = {
+ADABOOST_REGRESSOR_PARAMS = {
     'loss': hp.choice('loss_adaboost', ["linear", "square", "exponential"]),
     'n_estimators': hp.choice('n_estimators_adaboost', range(50, 300)),
     'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2), high=np.log(2)),
     # 'max_depth': hp.choice('max_depth_adaboost', range(1, 11)),
 }
 
-catboost_regressor_params = {
+CATBOOST_REGRESSOR_PARAMS = {
     'iterations': 2,
     'depth': hp.choice('depth_catboost', range(4, 10)),
     'learning_rate': 1,
@@ -157,62 +182,62 @@ catboost_regressor_params = {
 }
 
 
-regression_hspace = {
+REGRESSION_HPARAM_SPACE = {
     'extratree': {
         'model': ExtraTreesRegressor,
-        'param': extra_trees_regressor_params
+        'param': EXTRA_TREES_REGRESSOR_PARAMS
     },
     'ridge': {
         'model': Ridge,
-        'param': ridge_params
+        'param': RIDGE_REGRESSOR_PARAMS
     },
     'random_forest': {
         'model': RandomForestRegressor,
-        'param': random_forest_regressor_params
+        'param': RANDOM_FOREST_REGRESSOR_PARAMS
     },
     'lgbm': {
         'model': LGBMRegressor,
-        'param': lgbm_regressor_params
+        'param': LGBM_REGRESSOR_PARAMS
     },
     'adaboost': {
         'model': AdaBoostRegressor,
-        'param': adaboost_regressor_params
+        'param': ADABOOST_REGRESSOR_PARAMS
      },
     'catboost': {
         'model': CatBoostRegressor,
-        'param': catboost_regressor_params
+        'param': CATBOOST_REGRESSOR_PARAMS
     }
 }
 
 
-classification_hspace = {
+CLASSIFICATION_HPARAM_SPACE = {
     'knn': {
         'model': KNeighborsClassifier,
-        'param': knn_classifier_params
+        'param': KNN_CLASSIFIER_PARAMS
     },
     'svm': {
         'model': SVC,
-        'param': svc_params
+        'param': SVM_CLASSIFIER_PARAMS
     },
     'random_forest': {
         'model': RandomForestClassifier,
-        'param': random_forest_classifier_params
+        'param': RANDOM_FOREST_CLASSIFIER_PARAMS
     },
     'lgbm': {
         'model': LGBMClassifier,
-        'param': lgbm_classifier_params
+        'param': LGBM_CLASSIFIER_PARAMS
     },
     'adaboost': {
         'model': AdaBoostClassifier,
-        'param': adaboost_classifier_params
+        'param': ADABOOST_CLASSIFIER_PARAMS
     },
     'catboost': {
         'model': CatBoostClassifier,
-        'param': catboost_classifier_params
+        'param': CATBOOST_CLASSIFIER_PARAMS
     }
 }
 
-classification_hspace_base = {
+CLASSIFICATION_BASE_HPARAM_SPACE = {
     'knn': {
         'model': KNeighborsClassifier,
         'param': {}
@@ -239,7 +264,7 @@ classification_hspace_base = {
     }
 }
 
-regression_hspace_base = {
+REGRESSION_BASE_HPARAM_SPACE = {
     'extratree': {
         'model': ExtraTreesRegressor,
         'param': {}
@@ -266,7 +291,7 @@ regression_hspace_base = {
     }
 }
 
-regression_p_hspace_base = {
+REGRESSION_PREP_HPARAM_SPACE = {
     'cat_encoding': hp.choice('cat_enc', ['count', 'target+count', 'target+label', 'label']),
     'scaling': hp.choice('scaling', [True, False]),
     'log_transform': hp.choice('log_transform', [True, False]),
@@ -282,7 +307,7 @@ regression_p_hspace_base = {
     'feat_importance_thresh': hp.uniform('feat_importance_thresh', 0.001, 0.01)
 }
 
-classification_p_hspace_base = {
+CLASSIFICATION_PREP_HPARAM_SPACE = {
     'cat_encoding': hp.choice('cat_enc', ['target', 'count', 'target+count', 'target+label']),
     'scaling': hp.choice('scaling', [True, False]),
     'log_transform': hp.choice('log_transform', [True, False]),
