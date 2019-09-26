@@ -4,7 +4,8 @@ import hyperopt
 from hyperopt import hp
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, RandomForestRegressor, AdaBoostRegressor,\
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, \
+    RandomForestRegressor, AdaBoostRegressor, \
     ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from lightgbm import LGBMClassifier, LGBMRegressor
@@ -15,33 +16,45 @@ import numpy as np
 class Config:
     """ Configuration for various autoML components.
 
-        Defines the common configuration of different auto ML components. It is shared between AutoKaggle, AutoPipe,
-        Preprocessor and Ensembling class.
+        Defines the common configuration of different auto ML components. It is
+        shared between AutoKaggle, AutoPipe, Preprocessor and Ensembling class.
 
         # Arguments
             path: String. OS path for storing temporary model parameters.
             verbose: Bool. Defines the verbosity of the logging.
             time_limit: Int. Time budget for performing search and fit pipeline.
             use_ensembling: Bool. Defines whether to use an ensemble of models
-            num_estimators_ensemble: Int. Maximum number of estimators to be used in an ensemble
+            num_estimators_ensemble: Int. Maximum number of estimators to be used
+            in an ensemble
             ensemble_strategy: String. Strategy to ensemble models
-            ensemble_method: String. Aggregation method if ensemble_strategy is set to ranked_ensembling
-            random_ensemble: Bool. Whether the ensembling estimators are picked randomly.
-            diverse_ensemble: Bool. Whether estimators from different families are picked.
-            ensembling_search_iter: Int. Search iterations for ensembling hyper-parameter search
+            ensemble_method: String. Aggregation method if ensemble_strategy is
+            set to ranked_ensembling
+            random_ensemble: Bool. Whether the ensembling estimators are picked
+            randomly.
+            diverse_ensemble: Bool. Whether estimators from different families are
+            picked.
+            ensembling_search_iter: Int. Search iterations for ensembling
+            hyper-parameter search
             search_algo: String. Search strategy for hyper-parameter search.
             search_iter: Int. Number of iterations used for hyper-parameter search.
             cv_folds: Int. Number of Cross Validation folds.
-            subsample_ratio: Percent of subsample used for for hyper-parameter search.
+            subsample_ratio: Percent of subsample used for for hyper-parameter
+            search.
             data_info: list(String). Lists the datatypes of each feature column.
-            stack_probabilities: Bool. Whether to use class probabilities in ensembling.
+            stack_probabilities: Bool. Whether to use class probabilities in
+            ensembling.
             upsample_classes: Bool. Whether to upsample less represented classes
             num_p_hparams: Int. Number of preprocessor search spaces.
     """
-    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True, num_estimators_ensemble=50,
-                 ensemble_strategy='stacking', ensemble_method='max_voting', search_iter=500, cv_folds=3,
-                 subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True, stack_probabilities=False,
-                 data_info=None, upsample_classes=False, ensembling_search_iter=10, search_algo='random',
+
+    def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True,
+                 num_estimators_ensemble=50,
+                 ensemble_strategy='stacking', ensemble_method='max_voting',
+                 search_iter=500, cv_folds=3,
+                 subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True,
+                 stack_probabilities=False,
+                 data_info=None, upsample_classes=False, ensembling_search_iter=10,
+                 search_algo='random',
                  num_p_hparams=10):
         self.verbose = verbose
         self.path = path if path is not None else rand_temp_folder_generator()
@@ -61,15 +74,18 @@ class Config:
         self.subsample_ratio = subsample_ratio
         self.resampling_strategy = 'auto'
         self.random_state = 1001
-        self.classification_models = ['knn', 'svm', 'lgbm', 'random_forest', 'adaboost']
+        self.classification_models = ['knn', 'svm', 'lgbm', 'random_forest',
+                                      'adaboost']
         # self.classification_models = ['knn', 'lgbm', 'random_forest',]
-        self.regression_models = ['extratree', 'ridge', 'lgbm', 'random_forest', 'adaboost', 'catboost']
+        self.regression_models = ['extratree', 'ridge', 'lgbm', 'random_forest',
+                                  'adaboost', 'catboost']
         self.diverse_ensemble = diverse_ensemble
         self.stack_probabilities = stack_probabilities
         self.data_info = data_info
         self.upsample_classes = upsample_classes
         self.ensembling_search_iter = ensembling_search_iter
-        self.search_algo = hyperopt.rand.suggest if search_algo == 'random' else hyperopt.tpe.suggest
+        self.search_algo = hyperopt.rand.suggest if search_algo == 'random' else \
+            hyperopt.tpe.suggest
         self.num_p_hparams = num_p_hparams
 
     def update(self, options):
@@ -81,7 +97,8 @@ class Config:
 KNN_CLASSIFIER_PARAMS = {
     'n_neighbors': hp.choice('n_neighbors_knn', [1, 2, 4, 8, 16, 32, 64, 100]),
     'weights': hp.choice('weight_knn', ['uniform', 'distance']),
-    'metric': hp.choice('metric_knn', ["euclidean", "manhattan", "chebyshev", "minkowski"]),
+    'metric': hp.choice('metric_knn',
+                        ["euclidean", "manhattan", "chebyshev", "minkowski"]),
     'p': hp.choice('p_knn', range(1, 3)),
 }
 
@@ -110,20 +127,24 @@ LGBM_CLASSIFIER_PARAMS = {
     'min_child_weight': hp.choice('min_child_weight_lgbm', range(1, 100)),
     'max_depth': hp.choice('max_depth_lgbm', range(5, 10)),
     'n_estimators': hp.choice('n_estimators_lgbm', range(50, 200)),
-    'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-2), high=np.log(2)),
+    'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-2),
+                                   high=np.log(2)),
 }
 
 ADABOOST_CLASSIFIER_PARAMS = {
     'algorithm': hp.choice('algorithm_adaboost', ['SAMME.R', 'SAMME']),
     'n_estimators': hp.choice('n_estimators_adaboost', range(50, 500)),
-    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2), high=np.log(2)),
+    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2),
+                                   high=np.log(2)),
 }
 
 CATBOOST_CLASSIFIER_PARAMS = {
     'iterations': hp.choice('iterations_catboost', [5, 10]),
     'depth': hp.choice('depth_catboost', range(4, 11)),
-    'learning_rate': hp.loguniform('learning_rate_catboost', low=np.log(1e-3), high=np.log(1)),
-    'loss_function': hp.choice('loss_function_catboost', ['Logloss', 'CrossEntropy']),
+    'learning_rate': hp.loguniform('learning_rate_catboost', low=np.log(1e-3),
+                                   high=np.log(1)),
+    'loss_function': hp.choice('loss_function_catboost',
+                               ['Logloss', 'CrossEntropy']),
     'verbose': True,
     'leaf_estimation_iterations': 10,
     'l2_leaf_reg': hp.choice('l2_leaf_reg_catboost', np.logspace(-20, -19, 3))
@@ -163,13 +184,15 @@ LGBM_REGRESSOR_PARAMS = {
     'min_child_weight': hp.choice('min_child_weight_lgbm', range(1, 100)),
     'max_depth': hp.choice('max_depth_lgbm', range(5, 10)),
     'n_estimators': hp.choice('n_estimators_lgbm', range(50, 200)),
-    'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-5), high=np.log(1)),
+    'learning_rate': hp.loguniform('learning_rate_lgbm', low=np.log(1e-5),
+                                   high=np.log(1)),
 }
 
 ADABOOST_REGRESSOR_PARAMS = {
     'loss': hp.choice('loss_adaboost', ["linear", "square", "exponential"]),
     'n_estimators': hp.choice('n_estimators_adaboost', range(50, 300)),
-    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2), high=np.log(2)),
+    'learning_rate': hp.loguniform('learning_rate_adaboost', low=np.log(1e-2),
+                                   high=np.log(2)),
     # 'max_depth': hp.choice('max_depth_adaboost', range(1, 11)),
 }
 
@@ -180,7 +203,6 @@ CATBOOST_REGRESSOR_PARAMS = {
     'loss_function': 'RMSE',
     'verbose': True
 }
-
 
 REGRESSION_HPARAM_SPACE = {
     'extratree': {
@@ -202,13 +224,12 @@ REGRESSION_HPARAM_SPACE = {
     'adaboost': {
         'model': AdaBoostRegressor,
         'param': ADABOOST_REGRESSOR_PARAMS
-     },
+    },
     'catboost': {
         'model': CatBoostRegressor,
         'param': CATBOOST_REGRESSOR_PARAMS
     }
 }
-
 
 CLASSIFICATION_HPARAM_SPACE = {
     'knn': {
@@ -284,7 +305,7 @@ REGRESSION_BASE_HPARAM_SPACE = {
     'adaboost': {
         'model': AdaBoostRegressor,
         'param': {}
-     },
+    },
     'catboost': {
         'model': CatBoostRegressor,
         'param': {}
@@ -292,7 +313,8 @@ REGRESSION_BASE_HPARAM_SPACE = {
 }
 
 REGRESSION_PREP_HPARAM_SPACE = {
-    'cat_encoding': hp.choice('cat_enc', ['count', 'target+count', 'target+label', 'label']),
+    'cat_encoding': hp.choice('cat_enc',
+                              ['count', 'target+count', 'target+label', 'label']),
     'scaling': hp.choice('scaling', [True, False]),
     'log_transform': hp.choice('log_transform', [True, False]),
     'power_transform': hp.choice('power_transform', [True, False]),
@@ -300,15 +322,18 @@ REGRESSION_PREP_HPARAM_SPACE = {
     'binning': hp.choice('binning', [True, False]),
     'add_time_offset': hp.choice('add_time_offset', [True, False]),
     'add_time_diff': hp.choice('add_time_diff', [True, False]),
-    # 'cat_num_strategy': hp.choice('cat_num_strategy', ['mean', 'std', 'max', 'min', None]),
+    # 'cat_num_strategy': hp.choice('cat_num_strategy', ['mean', 'std', 'max',
+    # 'min', None]),
     # 'cat_cat_strategy': hp.choice('cat_cat_strategy', ['count', 'nunique', None]),
-    'imputation_strategy': hp.choice('imputation_strategy', ['most_frequent', 'zero']),
+    'imputation_strategy': hp.choice('imputation_strategy',
+                                     ['most_frequent', 'zero']),
     'pearson_thresh': hp.uniform('pearson_thresh', 0.001, 0.01),
     'feat_importance_thresh': hp.uniform('feat_importance_thresh', 0.001, 0.01)
 }
 
 CLASSIFICATION_PREP_HPARAM_SPACE = {
-    'cat_encoding': hp.choice('cat_enc', ['target', 'count', 'target+count', 'target+label']),
+    'cat_encoding': hp.choice('cat_enc',
+                              ['target', 'count', 'target+count', 'target+label']),
     'scaling': hp.choice('scaling', [True, False]),
     'log_transform': hp.choice('log_transform', [True, False]),
     'power_transform': hp.choice('power_transform', [True, False]),
@@ -316,9 +341,11 @@ CLASSIFICATION_PREP_HPARAM_SPACE = {
     'binning': hp.choice('binning', [True, False]),
     'add_time_offset': hp.choice('add_time_offset', [True, False]),
     'add_time_diff': hp.choice('add_time_diff', [True, False]),
-    # 'cat_num_strategy': hp.choice('cat_num_strategy', ['mean', 'std', 'max', 'min', None]),
+    # 'cat_num_strategy': hp.choice('cat_num_strategy', ['mean', 'std', 'max',
+    # 'min', None]),
     # 'cat_cat_strategy': hp.choice('cat_cat_strategy', ['count', 'nunique', None]),
-    'imputation_strategy': hp.choice('imputation_strategy', ['most_frequent', 'zero']),
+    'imputation_strategy': hp.choice('imputation_strategy',
+                                     ['most_frequent', 'zero']),
     'pearson_thresh': hp.uniform('pearson_thresh', 0.001, 0.01),
     'feat_importance_thresh': hp.uniform('feat_importance_thresh', 0.001, 0.01)
 }

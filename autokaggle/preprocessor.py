@@ -4,7 +4,8 @@ import scipy
 import itertools
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, PowerTransformer, KBinsDiscretizer, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, PowerTransformer, \
+    KBinsDiscretizer, OneHotEncoder
 from sklearn.base import TransformerMixin
 from sklearn.base import BaseEstimator
 from sklearn.impute import SimpleImputer
@@ -12,20 +13,25 @@ from sklearn.pipeline import Pipeline
 from abc import abstractmethod
 import collections
 from lightgbm import LGBMClassifier, LGBMRegressor
+
 LEVEL_HIGH = 32
 
 
 class Preprocessor(TransformerMixin):
     """ Implements basic preprocessing and feature engineering class.
 
-        Preprocessor takes care of the basic preprocessing and feature engineering of the input data. Similar to
-        Scikit-learn transformers, it implements the fit() and transform() methods. TO acheive this It applies various
-        feature primitives in a sequence using scikit-learn pipeline.
+        Preprocessor takes care of the basic preprocessing and feature engineering of
+        the input data. Similar to Scikit-learn transformers,it implements the fit()
+        and transform() methods. TO acheive this It applies various feature
+        primitives in a sequence using scikit-learn pipeline.
         # Arguments
-            config: Config. Defines the configuration of various components of the autoML pipeline.
+            config: Config. Defines the configuration of various components of the
+            AutoML pipeline.
             params: Dict. Hyper-parameter search space for preprocessor.
-            pipeline: Pipeline. Sci-kit learn pipeline class to apply the feature primitives in sequence
+            pipeline: Pipeline. Sci-kit learn pipeline class to apply the feature
+            primitives in sequence
     """
+
     def __init__(self, config, params):
         self.config = config
         self.params = params
@@ -61,8 +67,8 @@ class Preprocessor(TransformerMixin):
             raw_x: a numpy array instance containing the training/testing data
         # Returns
             A numpy array instance containing the transformed data.
-        This function provides transforms the input data by applying the transformations using the pre-trained
-        preprocessor chain.
+        This function provides transforms the input data by applying the
+        transformations using the pre-trained preprocessor chain.
         """
         # Get Meta-Feature
         data = TabularData(raw_x, self.config.data_info, self.config.verbose)
@@ -80,19 +86,30 @@ class Preprocessor(TransformerMixin):
         choice = params.get('cat_encoding', 'target')
         cat_pipeline = []
         if choice == 'target':
-            cat_pipeline.append(('target_encoder', TargetEncoder(operation='upd', selected_type='CAT')))
+            cat_pipeline.append(('target_encoder', TargetEncoder(operation='upd',
+                                                                 selected_type='CAT')
+                                 ))
         elif choice == 'label':
-            cat_pipeline.append(('label_encoder', LabelEncode(operation='upd', selected_type='CAT')))
+            cat_pipeline.append(
+                ('label_encoder', LabelEncode(operation='upd', selected_type='CAT')))
         elif choice == 'count':
-            cat_pipeline.append(('count_encoder', CatCount(operation='upd', selected_type='CAT')))
+            cat_pipeline.append(
+                ('count_encoder', CatCount(operation='upd', selected_type='CAT')))
         elif choice == 'target+count':
-            cat_pipeline.append(('target_encoder', TargetEncoder(operation='add', selected_type='CAT')))
-            cat_pipeline.append(('count_encoder', CatCount(operation='upd', selected_type='CAT')))
+            cat_pipeline.append(('target_encoder', TargetEncoder(operation='add',
+                                                                 selected_type='CAT')
+                                 ))
+            cat_pipeline.append(
+                ('count_encoder', CatCount(operation='upd', selected_type='CAT')))
         elif choice == 'one_hot':
-            cat_pipeline.append(('one_hot_encoder', OneHot(operation='upd', selected_type='CAT')))
+            cat_pipeline.append(
+                ('one_hot_encoder', OneHot(operation='upd', selected_type='CAT')))
         elif choice == 'target+label':
-            cat_pipeline.append(('target_encoder', TargetEncoder(operation='add', selected_type='CAT')))
-            cat_pipeline.append(('label_encoder', LabelEncode(operation='upd', selected_type='CAT')))
+            cat_pipeline.append(('target_encoder', TargetEncoder(operation='add',
+                                                                 selected_type='CAT')
+                                 ))
+            cat_pipeline.append(
+                ('label_encoder', LabelEncode(operation='upd', selected_type='CAT')))
         else:
             raise ValueError
         return cat_pipeline
@@ -113,15 +130,21 @@ class Preprocessor(TransformerMixin):
 
         numeric_pipeline = []
         if scaling:
-            numeric_pipeline.append(('scaler', TabScaler(operation='upd', selected_type='NUM')))
+            numeric_pipeline.append(
+                ('scaler', TabScaler(operation='upd', selected_type='NUM')))
         if log_transform:
-            numeric_pipeline.append(('log_transform', LogTransform(operation='upd', selected_type='NUM')))
+            numeric_pipeline.append(('log_transform',
+                                     LogTransform(operation='upd',
+                                                  selected_type='NUM')))
         if power_transform:
-            numeric_pipeline.append(('boxcox', BoxCox(operation='upd', selected_type='NUM')))
+            numeric_pipeline.append(
+                ('boxcox', BoxCox(operation='upd', selected_type='NUM')))
         if pca:
-            numeric_pipeline.append(('pca', TabPCA(operation='add', selected_type='NUM')))
+            numeric_pipeline.append(
+                ('pca', TabPCA(operation='add', selected_type='NUM')))
         if binning:
-            numeric_pipeline.append(('binning', Binning(operation='add', selected_type='NUM')))
+            numeric_pipeline.append(
+                ('binning', Binning(operation='add', selected_type='NUM')))
         return numeric_pipeline
 
     def get_filtering_pipeline(self, params):
@@ -134,15 +157,19 @@ class Preprocessor(TransformerMixin):
         pearson_thresh = params.get('pearson_thresh', 0)
         feat_importance_thresh = params.get('feat_importance_thresh', 0)
 
-        filter_pipeline = [('filter', FilterConstant(operation='del', selected_type='ALL'))]
+        filter_pipeline = [
+            ('filter', FilterConstant(operation='del', selected_type='ALL'))]
         if pearson_thresh > 0:
-            filter_pipeline.append(('pearson_corr', FeatureFilter(operation='del', selected_type='ALL',
-                                                                  threshold=pearson_thresh)))
+            filter_pipeline.append(
+                ('pearson_corr', FeatureFilter(operation='del', selected_type='ALL',
+                                               threshold=pearson_thresh)))
         if feat_importance_thresh > 0:
-            filter_pipeline.append(('lgbm_feat_selection', FeatureImportance(operation='del',
-                                                                             selected_type='ALL',
-                                                                             threshold=feat_importance_thresh,
-                                                                             task_type=self.config.objective)))
+            filter_pipeline.append(
+                ('lgbm_feat_selection',
+                 FeatureImportance(operation='del',
+                                   selected_type='ALL',
+                                   threshold=feat_importance_thresh,
+                                   task_type=self.config.objective)))
         return filter_pipeline
 
     @staticmethod
@@ -157,9 +184,11 @@ class Preprocessor(TransformerMixin):
         add_diff = params.get('add_time_diff', False)
         time_pipeline = []
         if add_offset:
-            time_pipeline.append(('time_offset', TimeOffset(operation='upd', selected_type='TIME')))
+            time_pipeline.append(
+                ('time_offset', TimeOffset(operation='upd', selected_type='TIME')))
         if add_diff:
-            time_pipeline.append(('time_diff', TimeDiff(operation='add', selected_type='TIME')))
+            time_pipeline.append(
+                ('time_diff', TimeDiff(operation='add', selected_type='TIME')))
         return time_pipeline
 
     @staticmethod
@@ -171,7 +200,9 @@ class Preprocessor(TransformerMixin):
             List of primitives to be applied (based on the given setting)
         """
         strategy = params.get('imputation_strategy', 'most_frequent')
-        impute_pipeline = [('imputer', Imputation(operation='upd', selected_type='ALL', strategy=strategy))]
+        impute_pipeline = [('imputer',
+                            Imputation(operation='upd', selected_type='ALL',
+                                       strategy=strategy))]
         return impute_pipeline
 
     @staticmethod
@@ -186,22 +217,27 @@ class Preprocessor(TransformerMixin):
         cat_cat_strategy = params.get('cat_cat_strategy', None)
         pipeline = []
         if cat_num_strategy:
-            pipeline.append(('cat_num_encoder', CatNumEncoder(operation='add', selected_type1='CAT',
-                                                              selected_type2='NUM', strategy=cat_num_strategy)))
+            pipeline.append(('cat_num_encoder',
+                             CatNumEncoder(operation='add', selected_type1='CAT',
+                                           selected_type2='NUM',
+                                           strategy=cat_num_strategy)))
         if cat_cat_strategy:
-            pipeline.append(('cat_cat_encoder', CatCatEncoder(operation='add', selected_type1='CAT',
-                                                              selected_type2='CAT', strategy=cat_cat_strategy)))
+            pipeline.append(('cat_cat_encoder',
+                             CatCatEncoder(operation='add', selected_type1='CAT',
+                                           selected_type2='CAT',
+                                           strategy=cat_cat_strategy)))
         return pipeline
 
 
 class TabularData:
     """ Represents the data and its meta-info.
 
-        TabularData includes the training/testing data along with its meta info such as data types, cardinality etc. The
-        user can update the data and its meta info as well as select the features matching the criteria.
+        TabularData includes the training/testing data along with its meta info such
+        as data types, cardinality etc. The user can update the data and its meta
+        info as well as select the features matching the criteria.
         # Arguments
             verbose: Bool. Determines the verbosity of the logging.
-            data_info: Dict. Dictionary mapping the feature names to their data_types.
+            data_info: Dict. Dictionary mapping the feature names to their data_types
             total_samples: Int. Number of samples in the data
             cat_col: List. List of the categorical features
             num_col: List. List of the numerical features
@@ -209,11 +245,14 @@ class TabularData:
             n_cat: Int. Number of categorical features
             n_num: Int. Number of numerical features
             n_time: Int. Number of time features
-            cat_cardinality: Dict. Dictionary mapping categorical feature names of their cardinality (no. of unique
-            values)
-            generated_features: List. List of the newly added features. (In addition to the pre-existing columns)
-            num_info: Dict. Dictionary mapping numeircal column to their meta info such as range, std etc.
+            cat_cardinality: Dict. Dictionary mapping categorical feature names of
+            their cardinality (no. of unique values)
+            generated_features: List. List of the newly added features. (In
+            addition to the pre-existing columns)
+            num_info: Dict. Dictionary mapping numeircal column to their meta info
+            such as range, std etc.
     """
+
     def __init__(self, raw_x, data_info, verbose=True):
         self.cat_col = None
         self.num_col = None
@@ -230,11 +269,13 @@ class TabularData:
         self.refresh_col_types()
 
         # Convert sparse to dense if needed
-        raw_x = raw_x.toarray() if type(raw_x) == scipy.sparse.csr.csr_matrix else raw_x
+        raw_x = raw_x.toarray() if type(
+            raw_x) == scipy.sparse.csr.csr_matrix else raw_x
 
         # To pandas Dataframe
         if type(raw_x) != pd.DataFrame:
-            raw_x = pd.DataFrame(raw_x, columns=[str(i) for i in range(raw_x.shape[1])])
+            raw_x = pd.DataFrame(raw_x,
+                                 columns=[str(i) for i in range(raw_x.shape[1])])
 
         self.X = raw_x
         # self.update_cat_cardinality()
@@ -267,14 +308,17 @@ class TabularData:
         # Arguments
             key: Identifier for renaming
         # Returns
-            Renaming function which takes current column name and outputs a new unique column name.
+            Renaming function which takes current column name and outputs a new
+            unique column name.
         """
+
         def rename_fn(col_name):
             col_name = str(col_name)
             col_name += '_' + key
             while col_name in self.X.columns:
                 col_name += '_' + key
             return col_name
+
         return rename_fn
 
     def update(self, operation, columns, x_tr, new_type=None, key=''):
@@ -287,7 +331,8 @@ class TabularData:
             key: Name key for renaming the new columns
         # Returns
             None
-        This function takes the transformed (or generated) features after applying the primitive and updates the
+        This function takes the transformed (or generated) features after applying
+        the primitive and updates the
         TabularData.
         """
         if operation == 'upd':
@@ -314,7 +359,8 @@ class TabularData:
             None
         # Returns
             None
-        This function updates the cat, num and time column lists based on (any) updates in the data_info.
+        This function updates the cat, num and time column lists based on (any)
+        updates in the data_info.
         """
         self.cat_col = [k for k, v in self.data_info.items() if v == 'CAT']
         self.num_col = [k for k, v in self.data_info.items() if v == 'NUM']
@@ -339,7 +385,8 @@ class TabularData:
     def select_columns(self, data_type):
         """ Returns all the columns matching the input data_type
         # Arguments
-            data_type: Required type of the data (either of 'CAT', 'NUM', 'TIME' or 'ALL')
+            data_type: Required type of the data (either of 'CAT', 'NUM', 'TIME' or
+            'ALL')
         # Returns
             List of the feature columns matching the input criteria.
         """
@@ -360,18 +407,26 @@ class TabularData:
 class Primitive(BaseEstimator, TransformerMixin):
     """ Base class for the single order data transformation function.
 
-        Primitive learns and applies the data transformation on a given set of features. The user can use fit() and
-        transform() functions to apply these transformations.
+        Primitive learns and applies the data transformation on a given set of
+        features. The user can use fit() and transform() functions to apply these
+        transformations.
 
         # Arguments
             options: Dict. Special arguments specific to the given primitive.
-            selected_type: 'String'. Specifies the type of features the transformation is supposed to be applied to.
-            operation: 'String'. Specifies the type of operation from 'add', 'update' or 'delete'
-            name_key : 'String'. Signature key to rename the column after applying the primitive.
-            selected: 'List'. List of the selected features, on which the transformation will be applied
-            drop_columns: 'List'. List of the features which would be dropped after applying the transformation.
-            supported_ops: Tuple. Specifies the allowed list of operations for this primitive.
+            selected_type: 'String'. Specifies the type of features the
+            transformation is supposed to be applied to.
+            operation: 'String'. Specifies the type of operation from 'add', 'update'
+             or 'delete'
+            name_key : 'String'. Signature key to rename the column after applying
+            the primitive.
+            selected: 'List'. List of the selected features, on which the
+            transformation will be applied
+            drop_columns: 'List'. List of the features which would be dropped after
+            applying the transformation.
+            supported_ops: Tuple. Specifies the allowed list of operations for this
+            primitive.
     """
+
     def __init__(self, operation='upd', selected_type=None, **kwargs):
         self.options = None
         self.selected = None
@@ -383,7 +438,8 @@ class Primitive(BaseEstimator, TransformerMixin):
         self.name_key = self.__class__.__name__
 
     def init_vars(self, **kwargs):
-        """ Initialize the primitive specific variables (which are not defined in the base class)
+        """ Initialize the primitive specific variables (which are not defined in the
+        base class)
         # Arguments
             kwargs: Dictionary containing primitive specific variables
         # Returns
@@ -392,7 +448,8 @@ class Primitive(BaseEstimator, TransformerMixin):
         self.options = kwargs
 
     def fit(self, data, y=None):
-        """ A wrapper function to train the given primitive on the input training data.
+        """ A wrapper function to train the given primitive on the input training
+        data.
         # Arguments
             data: A TabularData instance of training data.
             y: A numpy array of the target values.
@@ -401,14 +458,17 @@ class Primitive(BaseEstimator, TransformerMixin):
         """
         self.selected = data.select_columns(self.selected_type)
         if self.operation not in self.supported_ops:
-            print("Operation {} not supported for {}".format(self.operation, self.__class__.__name__))
+            print("Operation {} not supported for {}".format(self.operation,
+                                                             self.__class__.__name__)
+                  )
             self.selected = None
         if not self.selected:
             return self
         return self._fit(data, y)
 
     def transform(self, data, y=None):
-        """ A wrapper function to generate transformation on the input data based on pre-trained primitive.
+        """ A wrapper function to generate transformation on the input data based on
+        pre-trained primitive.
         # Arguments
             data: Input training/testing data in TabularData form.
             y: A numpy array of the target values.
@@ -421,7 +481,8 @@ class Primitive(BaseEstimator, TransformerMixin):
 
     @abstractmethod
     def _fit(self, data, y=None):
-        """ Contains the actual implementation of training the primitive (implemented in the child class)
+        """ Contains the actual implementation of training the primitive (implemented
+        in the child class)
         # Arguments
             data: A TabularData instance of training data.
             y: A numpy array of the target values.
@@ -432,8 +493,8 @@ class Primitive(BaseEstimator, TransformerMixin):
 
     @abstractmethod
     def _transform(self, data, y=None):
-        """ Contains the actual implementation of transforming the data using primitive. (implemented in the child
-        class)
+        """ Contains the actual implementation of transforming the data using
+        primitive. (implemented in the child class)
         # Arguments
             data: Input training/testing data in TabularData form.
             y: A numpy array of the target values.
@@ -446,25 +507,34 @@ class Primitive(BaseEstimator, TransformerMixin):
 class PrimitiveHigherOrder:
     """ Base class for the cross-order data transformation function.
 
-        PrimitiveHigherOrder learns and applies the data transformation across two sets of features. The user can use
-        fit() and transform() functions to apply these transformations.
+        PrimitiveHigherOrder learns and applies the data transformation across two
+        sets of features. The user can use fit() and transform() functions to
+        apply these transformations.
 
         # Arguments
             options: Dict. Special arguments specific to the given primitive.
-            selected_type1: 'String'. Specifies the first type of features the transformation is supposed to be applied
-            to.
-            selected_type2: 'String'. Specifies the second type of features the transformation is supposed to be applied
-            to.
-            operation: 'String'. Specifies the type of operation from 'add', 'update' or 'delete'
-            name_key : 'String'. Signature key to rename the column after applying the primitive.
-            selected_1: 'List'. List of the selected features in the first set, on which the transformation will be
+            selected_type1: 'String'. Specifies the first type of features the
+            transformation is supposed to be applied to.
+            selected_type2: 'String'. Specifies the second type of features the
+            transformation is supposed to be applied to.
+            operation: 'String'. Specifies the type of operation from 'add', 'update'
+             or 'delete'
+            name_key : 'String'. Signature key to rename the column after applying
+            the primitive.
+            selected_1: 'List'. List of the selected features in the first set, on
+            which the transformation will be
             applied
-            selected_2: 'List'. List of the selected features in the second set, on which the transformation will be
+            selected_2: 'List'. List of the selected features in the second set, on
+            which the transformation will be
             applied
-            drop_columns: 'List'. List of the features which would be dropped after applying the transformation.
-            supported_ops: Tuple. Specifies the allowed list of operations for this primitive.
+            drop_columns: 'List'. List of the features which would be dropped after
+            applying the transformation.
+            supported_ops: Tuple. Specifies the allowed list of operations for this
+            primitive.
     """
-    def __init__(self, operation='upd', selected_type1=None, selected_type2=None, **kwargs):
+
+    def __init__(self, operation='upd', selected_type1=None, selected_type2=None,
+                 **kwargs):
         self.options = None
         self.selected_1 = None
         self.selected_2 = None
@@ -477,7 +547,8 @@ class PrimitiveHigherOrder:
         self.name_key = self.__class__.__name__
 
     def init_vars(self, **kwargs):
-        """ Initialize the primitive specific variables (which are not defined in the base class)
+        """ Initialize the primitive specific variables (which are not defined in the
+        base class)
         # Arguments
             kwargs: Dictionary containing primitive specific variables
         # Returns
@@ -486,7 +557,8 @@ class PrimitiveHigherOrder:
         self.options = kwargs
 
     def fit(self, data, y=None):
-        """ A wrapper function to train the given primitive on the input training data.
+        """ A wrapper function to train the given primitive on the input training
+        data.
         # Arguments
             data: A TabularData instance of training data.
             y: A numpy array of the target values.
@@ -497,7 +569,9 @@ class PrimitiveHigherOrder:
         self.selected_2 = data.select_columns(self.selected_type2)
 
         if self.operation not in self.supported_ops:
-            print("Operation {} not supported for {}".format(self.operation, self.__class__.__name__))
+            print("Operation {} not supported for {}".format(self.operation,
+                                                             self.__class__.__name__)
+                  )
             self.selected_1 = None
             self.selected_2 = None
         if not self.selected_1 or not self.selected_2:
@@ -505,7 +579,8 @@ class PrimitiveHigherOrder:
         return self._fit(data, y)
 
     def transform(self, data, y=None):
-        """ A wrapper function to generate transformation on the input data based on pre-trained primitive.
+        """ A wrapper function to generate transformation on the input data based on
+        pre-trained primitive.
         # Arguments
             data: Input training/testing data in TabularData form.
             y: A numpy array of the target values.
@@ -518,7 +593,8 @@ class PrimitiveHigherOrder:
 
     @abstractmethod
     def _fit(self, data, y=None):
-        """ Contains the actual implementation of training the primitive (implemented in the child class)
+        """ Contains the actual implementation of training the primitive (implemented
+        in the child class)
         # Arguments
             data: A TabularData instance of training data.
             y: A numpy array of the target values.
@@ -529,8 +605,8 @@ class PrimitiveHigherOrder:
 
     @abstractmethod
     def _transform(self, data, y=None):
-        """ Contains the actual implementation of transforming the data using primitive. (implemented in the child
-        class)
+        """ Contains the actual implementation of transforming the data using
+        primitive. (implemented in the child class)
         # Arguments
             data: Input training/testing data in TabularData form.
             y: A numpy array of the target values.
@@ -543,7 +619,8 @@ class PrimitiveHigherOrder:
 class TabScaler(Primitive):
     """ Standard Scaler primitive.
 
-        TabScaler scales the selected numerical features to have 0 mean and unit variance.
+        TabScaler scales the selected numerical features to have 0 mean and unit
+        variance.
 
         # Arguments
             scaler: StandardScaler. Instance of scikit-learn StandardScaler object
@@ -558,17 +635,20 @@ class TabScaler(Primitive):
 
     def _transform(self, data, y=None):
         x_tr = self.scaler.transform(data.X[self.selected])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class BoxCox(Primitive):
     """ Power Transform primitive.
 
-        The class applies BoxCox power transformation to make the selected features have normal distribution.
+        The class applies BoxCox power transformation to make the selected features
+        have normal distribution.
 
         # Arguments
-            transformer: PowerTransformer. Instance of scikit-learn PowerTransformer object
+            transformer: PowerTransformer. Instance of scikit-learn PowerTransformer
+            object
     """
     transformer = None
     supported_ops = ('add', 'upd')
@@ -580,20 +660,25 @@ class BoxCox(Primitive):
 
     def _transform(self, data, y=None):
         x_tr = self.transformer.transform(data.X[self.selected])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class Binning(Primitive):
     """ Numerical binning primitive.
 
-        The class applies divides the given numeric column in the list of buckets, based on the range of their values.
+        The class applies divides the given numeric column in the list of buckets,
+        based on the range of their values.
 
         # Arguments
-            binner: KBinsDiscretizer. Instance of scikit-learn KBinsDiscretizer object
-            strategy: String. Strategy used to define width of the bins. Possible options are: (‘uniform’, ‘quantile’,
+            binner: KBinsDiscretizer. Instance of scikit-learn KBinsDiscretizer
+            object
+            strategy: String. Strategy used to define width of the bins. Possible
+            options are: (‘uniform’, ‘quantile’,
             ‘kmeans’)
-            encoding: String. Method used to encode the transformed result. Possible options are: (‘onehot’,
+            encoding: String. Method used to encode the transformed result. Possible
+            options are: (‘onehot’,
             ‘onehot-dense’, ‘ordinal’)
     """
     binner = None
@@ -612,14 +697,16 @@ class Binning(Primitive):
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame(self.binner.transform(data.X[self.selected]))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class OneHot(Primitive):
     """ One Hot Encoder for categorical features.
 
-        The class applies one hot encoding to categorical features, using the sklearn implementation.
+        The class applies one hot encoding to categorical features, using the
+        sklearn implementation.
 
         # Arguments
             ohe: OneHotEncoder. Instance of scikit-learn OneHotEncoder object
@@ -635,9 +722,11 @@ class OneHot(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame(self.ohe.transform(data.X[self.selected]))
         if self.operation == 'add':
-            data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+            data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                        key=self.name_key)
         elif self.operation == 'upd':
-            data.update('add', self.selected, x_tr, new_type='NUM', key=self.name_key)
+            data.update('add', self.selected, x_tr, new_type='NUM',
+                        key=self.name_key)
             data.update('del', self.selected, None, None, key=self.name_key)
         return data
 
@@ -645,12 +734,14 @@ class OneHot(Primitive):
 class LabelEncode(Primitive):
     """ Label Encoder for categorical features.
 
-        The class applies Label Encoding to categorical features, By mapping each category to a numerical value.
+        The class applies Label Encoding to categorical features, By mapping each
+        category to a numerical value.
 
         # Arguments
-            cat_to_int_label: Dict. Mapping from categories to their assigned integer value
-            unknown_key_dict: Dict. Mapping for each categorical feature column to the integer value to replace the
-            previously unseen categories
+            cat_to_int_label: Dict. Mapping from categories to their assigned integer
+            value
+            unknown_key_dict: Dict. Mapping for each categorical feature column to
+            the integer value to replace the previously unseen categories
     """
     cat_to_int_label = None
     unknown_key_dict = None
@@ -660,26 +751,33 @@ class LabelEncode(Primitive):
         self.cat_to_int_label = {}
         self.unknown_key_dict = {}
         for col in self.selected:
-            self.cat_to_int_label[col] = {key: idx for idx, key in enumerate(set(data.X[col]))}
+            self.cat_to_int_label[col] = {key: idx for idx, key in
+                                          enumerate(set(data.X[col]))}
             self.unknown_key_dict[col] = len(self.cat_to_int_label[col])
         return self
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[col] = data.X[col].apply(lambda key: self.cat_to_int_label[col].get(key, self.unknown_key_dict[col]))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+            x_tr[col] = data.X[col].apply(
+                lambda key: self.cat_to_int_label[col].get(key,
+                                                           self.unknown_key_dict[
+                                                               col]))
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class TargetEncoder(Primitive):
     """ Target Encoder for categorical features.
 
-        The class applies target encoding to categorical features, By learning the mapping of category to numeric value
+        The class applies target encoding to categorical features, By learning
+        the mapping of category to numeric value
         based on some aggregation of the target value.
 
         # Arguments
-            target_encoding_map: Dict. Mapping from categories to their assigned numeric value
+            target_encoding_map: Dict. Mapping from categories to their assigned
+            numeric value
     """
     target_encoding_map = None
     supported_ops = ('add', 'upd')
@@ -712,28 +810,34 @@ class TargetEncoder(Primitive):
         self.target_encoding_map = {}
         X['target'] = y
         for col in self.selected:
-            self.target_encoding_map[col] = self.calc_smooth_mean(X, col, 'target', alpha=5)
+            self.target_encoding_map[col] = self.calc_smooth_mean(X, col, 'target',
+                                                                  alpha=5)
         X.drop('target', axis=1, inplace=True)
         return self
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[col] = data.X[col].map(self.target_encoding_map[col][0], self.target_encoding_map[col][1])
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+            x_tr[col] = data.X[col].map(self.target_encoding_map[col][0],
+                                        self.target_encoding_map[col][1])
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class CatCatEncoder(PrimitiveHigherOrder):
     """ Cross column feature generator between categorical and categorical columns.
 
-        The class learns a new features based on the values of selected two categorical features.
+        The class learns a new features based on the values of selected two
+        categorical features.
 
         # Arguments
-            cat_cat_map: Dict. Mapping from cat-cat combination to the an assigned numeric value
-            strategy: String. Aggregation strategy to learn the mapping between cat-cat combination to numeric value
+            cat_cat_map: Dict. Mapping from cat-cat combination to the an assigned
+            numeric value
+            strategy: String. Aggregation strategy to learn the mapping between
+            cat-cat combination to numeric value
     """
-    supported_ops = ('add', )
+    supported_ops = ('add',)
     cat_cat_map = None
     strategy = None
 
@@ -742,7 +846,8 @@ class CatCatEncoder(PrimitiveHigherOrder):
 
     @staticmethod
     def cat_cat_count(df, col1, col2, strategy='count'):
-        """ Generate mapping for cat-cat combination to the numerical value based on the given strategy.
+        """ Generate mapping for cat-cat combination to the numerical value based on
+        the given strategy.
         # Arguments
             col1: First categorical column
             col2: Second categorical column
@@ -755,35 +860,45 @@ class CatCatEncoder(PrimitiveHigherOrder):
         elif strategy == 'nunique':
             mapping = df.groupby([col1])[col2].nunique()
         else:
-            mapping = df.groupby([col1])[col2].count() // df.groupby([col1])[col2].nunique()
+            mapping = df.groupby([col1])[col2].count() // df.groupby([col1])[
+                col2].nunique()
         return mapping
 
     def _fit(self, data, y=None):
         self.cat_cat_map = {}
         self.selected_1 = list(set(self.selected_1 + self.selected_2))
         for col1, col2 in itertools.combinations(self.selected_1, 2):
-            self.cat_cat_map[col1 + '_cross_' + col2] = self.cat_cat_count(data.X, col1, col2, self.strategy)
+            self.cat_cat_map[col1 + '_cross_' + col2] = \
+                self.cat_cat_count(data.X,
+                                   col1,
+                                   col2,
+                                   self.strategy)
         return self
 
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col1, col2 in itertools.combinations(self.selected_1, 2):
             if col1 + '_cross_' + col2 in self.cat_cat_map:
-                x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_cat_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected_1, x_tr, new_type='NUM', key=self.name_key)
+                x_tr[col1 + '_cross_' + col2] = data.X[col1].map(
+                    self.cat_cat_map[col1 + '_cross_' + col2])
+        data.update(self.operation, self.selected_1, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class CatNumEncoder(PrimitiveHigherOrder):
     """ Cross column feature generator between categorical and numerical columns.
 
-        The class learns a new features based on the values of selected categorical and numerical features.
+        The class learns a new features based on the values of selected categorical
+        and numerical features.
 
         # Arguments
-            cat_num_map: Dict. Mapping from cat-num combination to the an assigned numeric value
-            strategy: String. Aggregation strategy to learn the mapping between cat-num combination to numeric value
+            cat_num_map: Dict. Mapping from cat-num combination to the an assigned
+            numeric value
+            strategy: String. Aggregation strategy to learn the mapping between
+            cat-num combination to numeric value
     """
-    supported_ops = ('add', )
+    supported_ops = ('add',)
     cat_num_map = None
     strategy = None
 
@@ -792,7 +907,8 @@ class CatNumEncoder(PrimitiveHigherOrder):
 
     @staticmethod
     def cat_num_interaction(df, col1, col2, method='mean'):
-        """ Generate mapping for cat-num combination to the numerical value based on the given strategy.
+        """ Generate mapping for cat-num combination to the numerical value based on
+        the given strategy.
         # Arguments
             col1: categorical column
             col2: numerical column
@@ -817,7 +933,8 @@ class CatNumEncoder(PrimitiveHigherOrder):
         self.cat_num_map = {}
         for col1 in self.selected_1:
             for col2 in self.selected_2:
-                self.cat_num_map[col1 + '_cross_' + col2] = self.cat_num_interaction(data.X, col1, col2, self.strategy)
+                self.cat_num_map[col1 + '_cross_' + col2] = self.cat_num_interaction(
+                    data.X, col1, col2, self.strategy)
         return self
 
     def _transform(self, data, y=None):
@@ -825,21 +942,26 @@ class CatNumEncoder(PrimitiveHigherOrder):
         for col1 in self.selected_1:
             for col2 in self.selected_2:
                 if col1 + '_cross_' + col2 in self.cat_num_map:
-                    x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_num_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected_1, x_tr, new_type='NUM', key=self.name_key)
+                    x_tr[col1 + '_cross_' + col2] = data.X[col1].map(
+                        self.cat_num_map[col1 + '_cross_' + col2])
+        data.update(self.operation, self.selected_1, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class CatBinEncoder(PrimitiveHigherOrder):
     """ Cross column feature generator between categorical and binary columns.
 
-        The class learns a new features based on the values of selected categorical and binary features.
+        The class learns a new features based on the values of selected categorical
+        and binary features.
 
         # Arguments
-            cat_bin_map: Dict. Mapping from cat-bin combination to the an assigned numeric value
-            strategy: String. Aggregation strategy to learn the mapping between cat-bin combination to numeric value
+            cat_bin_map: Dict. Mapping from cat-bin combination to the an assigned
+            numeric value
+            strategy: String. Aggregation strategy to learn the mapping between
+            cat-bin combination to numeric value
     """
-    supported_ops = ('add', )
+    supported_ops = ('add',)
     cat_bin_map = None
     strategy = None
 
@@ -848,7 +970,8 @@ class CatBinEncoder(PrimitiveHigherOrder):
 
     @staticmethod
     def cat_bin_interaction(df, col1, col2, strategy='percent_true'):
-        """ Generate mapping for cat-bin combination to the numerical value based on the given strategy.
+        """ Generate mapping for cat-bin combination to the numerical value based on
+        the given strategy.
         # Arguments
             col1: Categorical column
             col2: Binary column
@@ -868,7 +991,8 @@ class CatBinEncoder(PrimitiveHigherOrder):
         self.cat_bin_map = {}
         for col1 in self.selected_1:
             for col2 in self.selected_2:
-                self.cat_bin_map[col1 + '_cross_' + col2] = self.cat_bin_interaction(data.X, col1, col2, self.strategy)
+                self.cat_bin_map[col1 + '_cross_' + col2] = self.cat_bin_interaction(
+                    data.X, col1, col2, self.strategy)
         return self
 
     def _transform(self, data, y=None):
@@ -876,16 +1000,18 @@ class CatBinEncoder(PrimitiveHigherOrder):
         for col1 in self.selected_1:
             for col2 in self.selected_2:
                 if col1 + '_cross_' + col2 in self.cat_bin_map:
-                    x_tr[col1 + '_cross_' + col2] = data.X[col1].map(self.cat_bin_map[col1 + '_cross_' + col2])
-        data.update(self.operation, self.selected_1, x_tr, new_type='NUM', key=self.name_key)
+                    x_tr[col1 + '_cross_' + col2] = data.X[col1].map(
+                        self.cat_bin_map[col1 + '_cross_' + col2])
+        data.update(self.operation, self.selected_1, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class FilterConstant(Primitive):
     """ Filters the constant or very low variance columns.
 
-        The class finds the non-changing or very low variance columns and marked them for deletion, so that they are
-        not used by the machine learning estimator.
+        The class finds the non-changing or very low variance columns and marked them
+        for deletion, so that they are not used by the machine learning estimator.
     """
     drop_columns = None
     supported_ops = ('del',)
@@ -896,16 +1022,18 @@ class FilterConstant(Primitive):
         return self
 
     def _transform(self, data, y=None):
-        data.update(self.operation, self.drop_columns, None, new_type=None, key=self.name_key)
+        data.update(self.operation, self.drop_columns, None, new_type=None,
+                    key=self.name_key)
         return data
 
 
 class TimeDiff(Primitive):
     """ Adds features based on difference of time values.
 
-        This class generates the features as time difference between two selected time columns.
+        This class generates the features as time difference between two selected
+        time columns.
     """
-    supported_ops = ('add', )
+    supported_ops = ('add',)
 
     def _fit(self, data, y=None):
         return self
@@ -914,14 +1042,16 @@ class TimeDiff(Primitive):
         x_tr = pd.DataFrame()
         for a, b in itertools.combinations(self.selected, 2):
             x_tr[a + '-' + b] = data.X[a] - data.X[b]
-        data.update(self.operation, self.selected, x_tr, new_type='TIME', key=self.name_key)
+        data.update(self.operation, self.selected, x_tr, new_type='TIME',
+                    key=self.name_key)
         return data
 
 
 class TimeOffset(Primitive):
     """ Updates the time features in terms of difference from the start value.
 
-        This class updates the time features such that they are represented as a difference from the start time.
+        This class updates the time features such that they are represented as a
+        difference from the start time.
 
         # Arguments
             start_time: Int. Starting time of the selected time feature.
@@ -936,19 +1066,21 @@ class TimeOffset(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         x_tr[self.selected] = data.X[self.selected] - self.start_time
-        data.update(self.operation, self.selected, x_tr, new_type='TIME', key=self.name_key)
+        data.update(self.operation, self.selected, x_tr, new_type='TIME',
+                    key=self.name_key)
         return data
 
 
 class TabPCA(Primitive):
     """ Generates new features by finding PCA of the selected features.
 
-        The class calculates the PCA of the selected features and adds the transformation as new set of features.
+        The class calculates the PCA of the selected features and adds the
+        transformation as new set of features.
         # Arguments
             pca: PCA. Scikit-lean PCA class.
     """
     pca = None
-    supported_ops = ('add', )
+    supported_ops = ('add',)
 
     def _fit(self, data, y=None):
         self.pca = PCA(n_components=0.99, svd_solver='full')
@@ -957,8 +1089,10 @@ class TabPCA(Primitive):
 
     def _transform(self, data, y=None):
         x_pca = self.pca.transform(data.X[self.selected])
-        x_pca = pd.DataFrame(x_pca, columns=['pca_' + str(i) for i in range(x_pca.shape[1])])
-        data.update(self.operation, self.selected, x_pca, new_type='NUM', key=self.name_key)
+        x_pca = pd.DataFrame(x_pca, columns=['pca_' + str(i) for i in
+                                             range(x_pca.shape[1])])
+        data.update(self.operation, self.selected, x_pca, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
@@ -967,7 +1101,8 @@ class CatCount(Primitive):
 
         Replaces the cargorical variables by their occrance count.
         # Arguments
-            count_dict: Dict. Mapping of the categories to their respective frequency count.
+            count_dict: Dict. Mapping of the categories to their respective frequency
+            count.
             unknown_key: Float. Mapping value for previously unseen category.
     """
     count_dict = None
@@ -983,16 +1118,18 @@ class CatCount(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[col] = data.X[col].apply(lambda key: self.count_dict[col].get(key, self.unknown_key))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+            x_tr[col] = data.X[col].apply(
+                lambda key: self.count_dict[col].get(key, self.unknown_key))
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class LogTransform(Primitive):
     """ Calculates the log transformation.
 
-        The class Calculates the log transform value of the given numeric feature. The formula is:
-        sign(x) * log(1 + mod(x))
+        The class Calculates the log transform value of the given numeric feature.
+        The formula is: sign(x) * log(1 + mod(x))
     """
     name_key = 'log_'
     supported_ops = ('add', 'upd')
@@ -1003,15 +1140,18 @@ class LogTransform(Primitive):
     def _transform(self, data, y=None):
         x_tr = pd.DataFrame()
         for col in self.selected:
-            x_tr[self.name_key + col] =  np.sign(data.X[col]) * np.log(1 + np.abs(data.X[col]))
-        data.update(self.operation, self.selected, x_tr, new_type='NUM', key=self.name_key)
+            x_tr[self.name_key + col] = np.sign(data.X[col]) * np.log(
+                1 + np.abs(data.X[col]))
+        data.update(self.operation, self.selected, x_tr, new_type='NUM',
+                    key=self.name_key)
         return data
 
 
 class Imputation(Primitive):
     """ Filters the features based on Pearson Correlation.
 
-        The class removes the features who have low pearson correlation with the target.
+        The class removes the features who have low pearson correlation with the
+        target.
         # Arguments
             threshold: Float. Threshold for filtering features.
     """
@@ -1027,7 +1167,8 @@ class Imputation(Primitive):
         for col in self.selected:
             if self.strategy == 'most_frequent':
                 value_counts = data.X[col].value_counts()
-                self.impute_dict[col] = value_counts.idxmax() if not value_counts.empty else 0
+                self.impute_dict[
+                    col] = value_counts.idxmax() if not value_counts.empty else 0
             elif self.strategy == 'zero':
                 self.impute_dict[col] = 0
             else:
@@ -1038,14 +1179,16 @@ class Imputation(Primitive):
         x_tr = pd.DataFrame()
         for col in self.selected:
             x_tr[col] = data.X[col].fillna(self.impute_dict[col])
-        data.update(self.operation, self.selected, x_tr, new_type=None, key=self.name_key)
+        data.update(self.operation, self.selected, x_tr, new_type=None,
+                    key=self.name_key)
         return data
 
 
 class FeatureFilter(Primitive):
     """ Filters the features based on Pearson Correlation.
 
-        The class removes the features who have low pearson correlation with the target.
+        The class removes the features who have low pearson correlation with the
+        target.
         # Arguments
             threshold: Float. Threshold for filtering features.
     """
@@ -1068,18 +1211,21 @@ class FeatureFilter(Primitive):
         return self
 
     def _transform(self, data, y=None):
-        data.update(self.operation, self.drop_columns, None, new_type=None, key=self.name_key)
+        data.update(self.operation, self.drop_columns, None, new_type=None,
+                    key=self.name_key)
         return data
 
 
 class FeatureImportance(Primitive):
     """ Filters the features based on feature importance score.
 
-        The class learns a Light GBM estimator for the given data and based on the feature importance scores, filters
-        the features with importance lower than the threshold.
+        The class learns a Light GBM estimator for the given data and based on the
+        feature importance scores, filters the features with importance lower than
+        the threshold.
         # Arguments
             threshold: Float. Threshold for filtering features.
-            task_type: 'String'. Specifies the task type amongst: ('classification', 'regression')
+            task_type: 'String'. Specifies the task type amongst: ('classification',
+            'regression')
     """
     threshold = None
     task_type = 'classification'
@@ -1114,12 +1260,14 @@ class FeatureImportance(Primitive):
                                       objective='regression')
         estimator.fit(data.X, y)
         feature_importance = estimator.feature_importances_
-        feature_importance = feature_importance/feature_importance.mean()
-        self.drop_columns = data.X.columns[np.where(feature_importance < self.threshold)[0]]
+        feature_importance = feature_importance / feature_importance.mean()
+        self.drop_columns = data.X.columns[
+            np.where(feature_importance < self.threshold)[0]]
         return self
 
     def _transform(self, data, y=None):
-        data.update(self.operation, self.drop_columns, None, new_type=None, key=self.name_key)
+        data.update(self.operation, self.drop_columns, None, new_type=None,
+                    key=self.name_key)
         return data
 
 
@@ -1141,7 +1289,7 @@ if __name__ == "__main__":
     datainfo = np.array(['TIME'] * ntime + ['NUM'] * nnum + ['CAT'] * ncat)
     print(x_train[:4, 20])
     prep = Preprocessor()
-    prep.fit(x_train, y_train, 24*60*60, datainfo)
+    prep.fit(x_train, y_train, 24 * 60 * 60, datainfo)
     x_new = prep.transform(x_train)
 
     print("-----")

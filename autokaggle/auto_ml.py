@@ -8,10 +8,13 @@ from sklearn.metrics import roc_auc_score, f1_score, mean_squared_error
 from joblib import dump, load
 
 from autokaggle.preprocessor import Preprocessor
-from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, read_json
+from autokaggle.utils import rand_temp_folder_generator, ensure_dir, write_json, \
+    read_json
 from lightgbm import LGBMClassifier, LGBMRegressor
-from autokaggle.config import Config, CLASSIFICATION_PREP_HPARAM_SPACE, REGRESSION_PREP_HPARAM_SPACE, \
-    REGRESSION_BASE_HPARAM_SPACE, CLASSIFICATION_BASE_HPARAM_SPACE, CLASSIFICATION_HPARAM_SPACE, REGRESSION_HPARAM_SPACE
+from autokaggle.config import Config, CLASSIFICATION_PREP_HPARAM_SPACE, \
+    REGRESSION_PREP_HPARAM_SPACE, \
+    REGRESSION_BASE_HPARAM_SPACE, CLASSIFICATION_BASE_HPARAM_SPACE, \
+    CLASSIFICATION_HPARAM_SPACE, REGRESSION_HPARAM_SPACE
 from sklearn.model_selection import StratifiedKFold, KFold
 import hyperopt
 from hyperopt import tpe, hp, fmin, Trials, STATUS_OK, STATUS_FAIL
@@ -24,45 +27,63 @@ import collections
 class AutoKaggle(BaseEstimator):
     """ Automated Machine Learning system class.
 
-        AutoKaggle implements an end to end automated ML system. It initiates and searches for the optimum ML pipeline.
-        The user can use it with the simple `fit()` and  `predict()` methods like Sci-kit learn estimators.
-        The user can specify various parameters controlling different components of the system.
+        AutoKaggle implements an end to end automated ML system. It initiates and
+        searches for the optimum ML pipeline. The user can use it with the simple
+        `fit()` and  `predict()` methods like Sci-kit learn estimators.
+        The user can specify various parameters controlling different components
+        of the system.
         # Arguments
             path: String. OS path for storing temporary model parameters.
             verbose: Bool. Defines the verbosity of the logging.
             time_limit: Int. Time budget for performing search and fit pipeline.
             use_ensembling: Bool. Defines whether to use an ensemble of models
-            num_estimators_ensemble: Int. Maximum number of estimators to be used in an ensemble
+            num_estimators_ensemble: Int. Maximum number of estimators to be used
+            in an ensemble
             ensemble_strategy: String. Strategy to ensemble models
-            ensemble_method: String. Aggregation method if ensemble_strategy is set to ranked_ensembling
-            random_ensemble: Bool. Whether the ensembling estimators are picked randomly.
-            diverse_ensemble: Bool. Whether estimators from different families are picked.
-            ensembling_search_iter: Int. Search iterations for ensembling hyper-parameter search
+            ensemble_method: String. Aggregation method if ensemble_strategy is
+            set to ranked_ensembling
+            random_ensemble: Bool. Whether the ensembling estimators are picked
+            randomly.
+            diverse_ensemble: Bool. Whether estimators from different families are
+            picked.
+            ensembling_search_iter: Int. Search iterations for ensembling
+            hyper-parameter search
             search_algo: String. Search strategy for hyper-parameter search.
             search_iter: Int. Number of iterations used for hyper-parameter search.
             cv_folds: Int. Number of Cross Validation folds.
-            subsample_ratio: Percent of subsample used for for hyper-parameter search.
+            subsample_ratio: Percent of subsample used for for hyper-parameter
+            search.
             data_info: list(String). Lists the datatypes of each feature column.
-            stack_probabilities: Bool. Whether to use class probabilities in ensembling.
+            stack_probabilities: Bool. Whether to use class probabilities in
+            ensembling.
             upsample_classes: Bool. Whether to upsample less represented classes
             num_p_hparams: Int. Number of preprocessor search spaces.
     """
 
     def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True,
-                 num_estimators_ensemble=50, ensemble_strategy='stacking', ensemble_method='max_voting',
-                 search_iter=500, cv_folds=3, subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True,
-                 stack_probabilities=False, data_info=None, upsample_classes=False, ensembling_search_iter=10,
+                 num_estimators_ensemble=50, ensemble_strategy='stacking',
+                 ensemble_method='max_voting',
+                 search_iter=500, cv_folds=3, subsample_ratio=0.1,
+                 random_ensemble=False, diverse_ensemble=True,
+                 stack_probabilities=False, data_info=None, upsample_classes=False,
+                 ensembling_search_iter=10,
                  search_algo='random', num_p_hparams=10):
         self.is_trained = False
         if not path:
             path = rand_temp_folder_generator()
-        self.config = Config(path=path, verbose=verbose, time_limit=time_limit, use_ensembling=use_ensembling,
-                             num_estimators_ensemble=num_estimators_ensemble, ensemble_strategy=ensemble_strategy,
-                             ensemble_method=ensemble_method, search_iter=search_iter, cv_folds=cv_folds,
-                             subsample_ratio=subsample_ratio, random_ensemble=random_ensemble,
-                             diverse_ensemble=diverse_ensemble, stack_probabilities=stack_probabilities,
+        self.config = Config(path=path, verbose=verbose, time_limit=time_limit,
+                             use_ensembling=use_ensembling,
+                             num_estimators_ensemble=num_estimators_ensemble,
+                             ensemble_strategy=ensemble_strategy,
+                             ensemble_method=ensemble_method,
+                             search_iter=search_iter, cv_folds=cv_folds,
+                             subsample_ratio=subsample_ratio,
+                             random_ensemble=random_ensemble,
+                             diverse_ensemble=diverse_ensemble,
+                             stack_probabilities=stack_probabilities,
                              data_info=data_info, upsample_classes=upsample_classes,
-                             ensembling_search_iter=ensembling_search_iter, search_algo=search_algo,
+                             ensembling_search_iter=ensembling_search_iter,
+                             search_algo=search_algo,
                              num_p_hparams=num_p_hparams)
         self.pipeline = None
         self.m_hparams = None
@@ -75,20 +96,25 @@ class AutoKaggle(BaseEstimator):
             x: A numpy.ndarray instance containing the training data.
             y: training label vector.
             time_limit: remaining time budget.
-            data_info: meta-features of the dataset, which is an numpy.ndarray describing the feature type of each
-             column in raw_x. The feature type include: 'TIME' for temporal feature, 'NUM' for other numerical feature,
+            data_info: meta-features of the dataset, which is an numpy.ndarray
+            describing the feature type of each
+             column in raw_x. The feature type include: 'TIME' for temporal
+             feature, 'NUM' for other numerical feature,
              and 'CAT' for categorical feature.
         # Returns
             None
         Both inputs X and y are numpy arrays.
-        If fit is called multiple times on incremental data (train, test1, test2, etc.)
-        you should warm-start your training from the pre-trained model. Past data will
+        If fit is called multiple times on incremental data (train, test1, test2,
+        etc.)
+        you should warm-start your training from the pre-trained model. Past data
+        will
         NOT be available for re-training.
         """
         self.config.time_limit = time_limit if time_limit else 24 * 60 * 60
 
         # Extract or read data info
-        self.config.data_info = data_info if data_info is not None else self.extract_data_info(x)
+        self.config.data_info = data_info if data_info is not None else \
+            self.extract_data_info(x)
 
         if self.config.verbose:
             print('DATA_INFO: {}'.format(self.config.data_info))
@@ -130,7 +156,8 @@ class AutoKaggle(BaseEstimator):
         return y
 
     def predict_proba(self, x_test):
-        """ Predict label probabilities on the test data for the given classification task.
+        """ Predict label probabilities on the test data for the given
+        classification task.
         # Arguments
             x_test: A numpy.ndarray instance containing the test data.
         # Returns
@@ -143,7 +170,8 @@ class AutoKaggle(BaseEstimator):
         return y
 
     def evaluate(self, x_test, y_test):
-        """ Predict label probabilities on the test data for the given classification task.
+        """ Predict label probabilities on the test data for the given
+        classification task.
         # Arguments
             x_test: A numpy.ndarray instance containing the training data.
             y_test: A numpy array with ground truth labels for the test data
@@ -171,7 +199,8 @@ class AutoKaggle(BaseEstimator):
             Up-sampled version of the dataset
         """
         if self.config.upsample_classes:
-            x, y = SMOTE(sampling_strategy=self.config.resampling_strategy).fit_resample(x, y)
+            x, y = SMOTE(
+                sampling_strategy=self.config.resampling_strategy).fit_resample(x, y)
         while x.shape[0] < 60:
             x = np.concatenate([x, x], axis=0)
             y = np.concatenate([y, y], axis=0)
@@ -207,16 +236,19 @@ class AutoKaggle(BaseEstimator):
         # Returns
             List of hyper-parameter trials
         """
-        grid_train_x, grid_train_y = self.subsample(x, y, sample_percent=self.config.subsample_ratio)
+        grid_train_x, grid_train_y = \
+            self.subsample(x, y, sample_percent=self.config.subsample_ratio)
         score_metric, skf = self.get_skf(self.config.cv_folds)
 
         def objective_func(params):
             model_class = params['estimator']['model']
             m_params = params['estimator']['param']
             p_params = params['prep']
-            pipeline = AutoPipe(model_class=model_class, m_params=m_params, p_params=p_params, config=self.config)
+            pipeline = AutoPipe(model_class=model_class, m_params=m_params,
+                                p_params=p_params, config=self.config)
             try:
-                eval_score = cross_val_score(pipeline, grid_train_x, grid_train_y, scoring=score_metric, cv=skf).mean()
+                eval_score = cross_val_score(pipeline, grid_train_x, grid_train_y,
+                                             scoring=score_metric, cv=skf).mean()
                 status = STATUS_OK
             except ValueError as e:
                 print(e)
@@ -226,13 +258,16 @@ class AutoKaggle(BaseEstimator):
                 print("CV Score:", eval_score)
                 print("\n=================")
             loss = 1 - eval_score if status == STATUS_OK else float('inf')
-            return {'loss': loss, 'status': status, 'model_class': model_class, 'm_params': m_params,
+            return {'loss': loss, 'status': status, 'model_class': model_class,
+                    'm_params': m_params,
                     'p_params': p_params}
 
         trials = Trials()
         search_space = {'prep': prep_space, 'estimator': model_space}
-        _ = fmin(objective_func, search_space, algo=self.config.search_algo, trials=trials,
-                 max_evals=self.config.search_iter, rstate=np.random.RandomState(self.config.random_state))
+        _ = fmin(objective_func, search_space, algo=self.config.search_algo,
+                 trials=trials,
+                 max_evals=self.config.search_iter,
+                 rstate=np.random.RandomState(self.config.random_state))
         return trials
 
     def get_best_pipeline(self, trials):
@@ -246,7 +281,8 @@ class AutoKaggle(BaseEstimator):
             best_pipeline = self.setup_ensemble(trials)
         else:
             opt = trials.best_trial['result']
-            best_pipeline = AutoPipe(opt['model_class'], opt['m_params'], opt['p_params'], self.config)
+            best_pipeline = AutoPipe(opt['model_class'], opt['m_params'],
+                                     opt['p_params'], self.config)
             if self.config.verbose:
                 print("The best hyperparameter setting found:")
                 print(opt)
@@ -288,7 +324,8 @@ class AutoKaggle(BaseEstimator):
         # Arguments
             trial_list: List of the hyper-parameter search trials.
         # Returns
-            List of top hyper-parameter spaces equally selected from each estimator family.
+            List of top hyper-parameter spaces equally selected from each
+            estimator family.
         """
         groups = collections.defaultdict(list)
 
@@ -299,7 +336,8 @@ class AutoKaggle(BaseEstimator):
         while idx < self.config.num_estimators_ensemble:
             for grp in groups.values():
                 if j < len(grp):
-                    est = AutoPipe(grp[j]['model_class'], grp[j]['m_params'], grp[j]['p_params'], self.config)
+                    est = AutoPipe(grp[j]['model_class'], grp[j]['m_params'],
+                                   grp[j]['p_params'], self.config)
                     estimator_list.append(est)
                     idx += 1
             j += 1
@@ -310,13 +348,15 @@ class AutoKaggle(BaseEstimator):
         # Arguments
             trials: List of the hyper-parameter search trials.
         # Returns
-            An ensembling estimator to be trained using the base estimators picked from trials.
+            An ensembling estimator to be trained using the base estimators picked
+            from trials.
         """
         # Filter the unsuccessful hparam spaces i.e. 'loss' == float('inf')
         best_trials = [t for t in trials.results if t['loss'] != float('inf')]
         best_trials = sorted(best_trials, key=lambda k: k['loss'], reverse=False)
 
-        self.config.num_estimators_ensemble = min(self.config.num_estimators_ensemble, len(best_trials))
+        self.config.num_estimators_ensemble = min(
+            self.config.num_estimators_ensemble, len(best_trials))
 
         if self.config.random_ensemble:
             np.random.shuffle(best_trials)
@@ -326,20 +366,25 @@ class AutoKaggle(BaseEstimator):
         else:
             estimator_list = []
             for i in range(self.config.num_estimators_ensemble):
-                est = AutoPipe(best_trials[i]['model_class'], best_trials[i]['m_params'], best_trials[i]['p_params'],
+                est = AutoPipe(best_trials[i]['model_class'],
+                               best_trials[i]['m_params'],
+                               best_trials[i]['p_params'],
                                self.config)
                 estimator_list.append(est)
 
         if self.config.ensemble_strategy == 'stacking':
-            best_estimator_ = StackedEnsemblingModel(estimator_list, config=self.config)
+            best_estimator_ = StackedEnsemblingModel(estimator_list,
+                                                     config=self.config)
         else:
-            best_estimator_ = RankedEnsemblingModel(estimator_list, config=self.config)
+            best_estimator_ = RankedEnsemblingModel(estimator_list,
+                                                    config=self.config)
         return best_estimator_
 
     @staticmethod
     def extract_data_info(raw_x):
         """
-        Extracts the data info automatically based on the type of each feature in raw_x.
+        Extracts the data info automatically based on the type of each feature in
+        raw_x.
         # Arguments
             raw_x: a numpy.ndarray instance containing the training data.
         # Returns
@@ -365,36 +410,55 @@ class Classifier(AutoKaggle):
             verbose: Bool. Defines the verbosity of the logging.
             time_limit: Int. Time budget for performing search and fit pipeline.
             use_ensembling: Bool. Defines whether to use an ensemble of models
-            num_estimators_ensemble: Int. Maximum number of estimators to be used in an ensemble
+            num_estimators_ensemble: Int. Maximum number of estimators to be used
+            in an ensemble
             ensemble_strategy: String. Strategy to ensemble models
-            ensemble_method: String. Aggregation method if ensemble_strategy is set to ranked_ensembling
-            random_ensemble: Bool. Whether the ensembling estimators are picked randomly.
-            diverse_ensemble: Bool. Whether estimators from different families are picked.
-            ensembling_search_iter: Int. Search iterations for ensembling hyper-parameter search
+            ensemble_method: String. Aggregation method if ensemble_strategy is
+            set to ranked_ensembling
+            random_ensemble: Bool. Whether the ensembling estimators are picked
+            randomly.
+            diverse_ensemble: Bool. Whether estimators from different families are
+            picked.
+            ensembling_search_iter: Int. Search iterations for ensembling
+            hyper-parameter search
             search_algo: String. Search strategy for hyper-parameter search.
             search_iter: Int. Number of iterations used for hyper-parameter search.
             cv_folds: Int. Number of Cross Validation folds.
-            subsample_ratio: Percent of subsample used for for hyper-parameter search.
+            subsample_ratio: Percent of subsample used for for hyper-parameter
+            search.
             data_info: list(String). Lists the datatypes of each feature column.
-            stack_probabilities: Bool. Whether to use class probabilities in ensembling.
+            stack_probabilities: Bool. Whether to use class probabilities in
+            ensembling.
             upsample_classes: Bool. Whether to upsample less represented classes
             num_p_hparams: Int. Number of preprocessor search spaces.
     """
+
     def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True,
-                 num_estimators_ensemble=50, ensemble_strategy='stacking', ensemble_method='max_voting',
-                 search_iter=500, cv_folds=3, subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True,
-                 stack_probabilities=False, data_info=None, upsample_classes=False, ensembling_search_iter=10,
+                 num_estimators_ensemble=50, ensemble_strategy='stacking',
+                 ensemble_method='max_voting',
+                 search_iter=500, cv_folds=3, subsample_ratio=0.1,
+                 random_ensemble=False, diverse_ensemble=True,
+                 stack_probabilities=False, data_info=None, upsample_classes=False,
+                 ensembling_search_iter=10,
                  search_algo='random', num_p_hparams=10):
-        super().__init__(path=path, verbose=verbose, time_limit=time_limit, use_ensembling=use_ensembling,
-                         num_estimators_ensemble=num_estimators_ensemble, ensemble_strategy=ensemble_strategy,
-                         ensemble_method=ensemble_method, search_iter=search_iter, cv_folds=cv_folds,
-                         subsample_ratio=subsample_ratio, random_ensemble=random_ensemble, diverse_ensemble=diverse_ensemble,
-                         stack_probabilities=stack_probabilities, data_info=data_info,
-                         upsample_classes=upsample_classes, ensembling_search_iter=ensembling_search_iter,
+        super().__init__(path=path, verbose=verbose, time_limit=time_limit,
+                         use_ensembling=use_ensembling,
+                         num_estimators_ensemble=num_estimators_ensemble,
+                         ensemble_strategy=ensemble_strategy,
+                         ensemble_method=ensemble_method, search_iter=search_iter,
+                         cv_folds=cv_folds,
+                         subsample_ratio=subsample_ratio,
+                         random_ensemble=random_ensemble,
+                         diverse_ensemble=diverse_ensemble,
+                         stack_probabilities=stack_probabilities,
+                         data_info=data_info,
+                         upsample_classes=upsample_classes,
+                         ensembling_search_iter=ensembling_search_iter,
                          search_algo=search_algo, num_p_hparams=num_p_hparams)
         self.config.objective = 'classification'
-        self.m_hparams = hp.choice('classifier', [CLASSIFICATION_HPARAM_SPACE[m] for m in
-                                                  self.config.classification_models])
+        self.m_hparams = hp.choice('classifier',
+                                   [CLASSIFICATION_HPARAM_SPACE[m] for m in
+                                    self.config.classification_models])
         self.m_hparams_base = hp.choice('classifier',
                                         [CLASSIFICATION_BASE_HPARAM_SPACE[m] for m in
                                          self.config.classification_models])
@@ -406,10 +470,12 @@ class Classifier(AutoKaggle):
         """
         if self.config.objective == 'binary':
             score_metric = 'roc_auc'
-            skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
+            skf = StratifiedKFold(n_splits=folds, shuffle=True,
+                                  random_state=self.config.random_state)
         else:
             score_metric = 'f1_weighted'
-            skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
+            skf = StratifiedKFold(n_splits=folds, shuffle=True,
+                                  random_state=self.config.random_state)
         return score_metric, skf
 
 
@@ -422,63 +488,89 @@ class Regressor(AutoKaggle):
             verbose: Bool. Defines the verbosity of the logging.
             time_limit: Int. Time budget for performing search and fit pipeline.
             use_ensembling: Bool. Defines whether to use an ensemble of models
-            num_estimators_ensemble: Int. Maximum number of estimators to be used in an ensemble
+            num_estimators_ensemble: Int. Maximum number of estimators to be used
+            in an ensemble
             ensemble_strategy: String. Strategy to ensemble models
-            ensemble_method: String. Aggregation method if ensemble_strategy is set to ranked_ensembling
-            random_ensemble: Bool. Whether the ensembling estimators are picked randomly.
-            diverse_ensemble: Bool. Whether estimators from different families are picked.
-            ensembling_search_iter: Int. Search iterations for ensembling hyper-parameter search
+            ensemble_method: String. Aggregation method if ensemble_strategy is
+            set to ranked_ensembling
+            random_ensemble: Bool. Whether the ensembling estimators are picked
+            randomly.
+            diverse_ensemble: Bool. Whether estimators from different families are
+            picked.
+            ensembling_search_iter: Int. Search iterations for ensembling
+            hyper-parameter search
             search_algo: String. Search strategy for hyper-parameter search.
             search_iter: Int. Number of iterations used for hyper-parameter search.
             cv_folds: Int. Number of Cross Validation folds.
-            subsample_ratio: Percent of subsample used for for hyper-parameter search.
+            subsample_ratio: Percent of subsample used for for hyper-parameter
+            search.
             data_info: list(String). Lists the datatypes of each feature column.
-            stack_probabilities: Bool. Whether to use class probabilities in ensembling.
+            stack_probabilities: Bool. Whether to use class probabilities in
+            ensembling.
             upsample_classes: Bool. Whether to upsample less represented classes
             num_p_hparams: Int. Number of preprocessor search spaces.
     """
+
     def __init__(self, path=None, verbose=True, time_limit=None, use_ensembling=True,
-                 num_estimators_ensemble=50, ensemble_strategy='stacking', ensemble_method='max_voting',
-                 search_iter=500, cv_folds=3, subsample_ratio=0.1, random_ensemble=False, diverse_ensemble=True,
-                 stack_probabilities=False, data_info=None, upsample_classes=False, ensembling_search_iter=10,
+                 num_estimators_ensemble=50, ensemble_strategy='stacking',
+                 ensemble_method='max_voting',
+                 search_iter=500, cv_folds=3, subsample_ratio=0.1,
+                 random_ensemble=False, diverse_ensemble=True,
+                 stack_probabilities=False, data_info=None, upsample_classes=False,
+                 ensembling_search_iter=10,
                  search_algo='random', num_p_hparams=10):
-        super().__init__(path=path, verbose=verbose, time_limit=time_limit, use_ensembling=use_ensembling,
-                         num_estimators_ensemble=num_estimators_ensemble, ensemble_strategy=ensemble_strategy,
-                         ensemble_method=ensemble_method, search_iter=search_iter, cv_folds=cv_folds,
-                         subsample_ratio=subsample_ratio, random_ensemble=random_ensemble,
+        super().__init__(path=path, verbose=verbose, time_limit=time_limit,
+                         use_ensembling=use_ensembling,
+                         num_estimators_ensemble=num_estimators_ensemble,
+                         ensemble_strategy=ensemble_strategy,
+                         ensemble_method=ensemble_method, search_iter=search_iter,
+                         cv_folds=cv_folds,
+                         subsample_ratio=subsample_ratio,
+                         random_ensemble=random_ensemble,
                          diverse_ensemble=diverse_ensemble,
-                         stack_probabilities=stack_probabilities, data_info=data_info,
-                         upsample_classes=upsample_classes, ensembling_search_iter=ensembling_search_iter,
+                         stack_probabilities=stack_probabilities,
+                         data_info=data_info,
+                         upsample_classes=upsample_classes,
+                         ensembling_search_iter=ensembling_search_iter,
                          search_algo=search_algo, num_p_hparams=num_p_hparams)
         self.config.objective = 'regression'
-        self.m_hparams = hp.choice('regressor', [REGRESSION_HPARAM_SPACE[m] for m in self.config.regression_models])
+        self.m_hparams = hp.choice('regressor', [REGRESSION_HPARAM_SPACE[m] for m in
+                                                 self.config.regression_models])
         self.m_hparams_base = hp.choice('regressor',
-                                        [REGRESSION_BASE_HPARAM_SPACE[m] for m in self.config.classification_models])
+                                        [REGRESSION_BASE_HPARAM_SPACE[m] for m in
+                                         self.config.classification_models])
         self.p_hparams_base = REGRESSION_PREP_HPARAM_SPACE
 
     def get_skf(self, folds):
         """
             See the base class.
         """
-        return 'neg_mean_squared_error', KFold(n_splits=folds, shuffle=True, random_state=self.config.random_state)
+        return 'neg_mean_squared_error', KFold(n_splits=folds, shuffle=True,
+                                               random_state=self.config.random_state)
 
 
 class AutoPipe(BaseEstimator):
     """ Implements a machine learning pipeline.
 
-        Implements a machine learning pipeline with preprocessor and estimator. A user can call fit(), and predict()
-        methods on it. It is used as a search unit in AutoKaggle's hyeper-parameter search.
+        Implements a machine learning pipeline with preprocessor and estimator. A
+        user can call fit(), and predict() methods on it. It is used as a  search
+        unit in AutoKaggle's hyeper-parameter search.
         # Arguments
-            config: Config. Defines the configuration of various components of the pipeline.
+            config: Config. Defines the configuration of various components of the
+            pipeline.
             m_params: Dict. Hyper-parameter search space for estimator.
             p_params: Dict. Hyper-parameter search space for preprocessor.
             model_class: Estimator. Class name of the estimator used in the pipeline.
-            _estimator_type: String. Denotes if the estimator is 'classifier' or 'regressor'
-            prep: Preprocessor. Instance of the Preprocessor class, which does basic feature preprocessing and feature
+            _estimator_type: String. Denotes if the estimator is 'classifier' or
+            'regressor'
+            prep: Preprocessor. Instance of the Preprocessor class, which does
+            basic feature preprocessing and feature
             engineering
-            model: Estimator. Instance of the estimator class which learns a machine learning model and predicts on the
+            model: Estimator. Instance of the estimator class which learns a
+            machine learning model and predicts on the
             given data.
     """
+
     def __init__(self, model_class, m_params, p_params, config):
         self.prep = None
         self.model = None
@@ -486,7 +578,8 @@ class AutoPipe(BaseEstimator):
         self.m_params = m_params
         self.p_params = p_params
         self.model_class = model_class
-        self._estimator_type = 'classifier' if is_classifier(model_class) else 'regressor'
+        self._estimator_type = 'classifier' if is_classifier(
+            model_class) else 'regressor'
 
     def fit(self, x, y):
         """ Trains the given pipeline.
@@ -513,7 +606,8 @@ class AutoPipe(BaseEstimator):
         return self.model.predict(x)
 
     def predict_proba(self, x):
-        """ Predict label probabilities on the test data for the given classification task.
+        """ Predict label probabilities on the test data for the given
+        classification task.
         # Arguments
             x: A numpy.ndarray instance containing the test data.
         # Returns
