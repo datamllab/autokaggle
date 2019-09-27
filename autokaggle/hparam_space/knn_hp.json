@@ -1,0 +1,1 @@
+{"n_neighbors": [2, 4, 6, 8, 10, 12, 14, 16, 18, 20], "weights": ["uniform", "distance"], "algorithm": ["ball_tree", "kd_tree", "brute"], "leaf_size": [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], "metric": ["minkowski", "euclidean", "manhattan", "chebyshev"], "p": [1, 2, 3]}
