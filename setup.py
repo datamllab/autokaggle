@@ -5,7 +5,7 @@ setup(
     name='autokaggle',
     packages=find_packages(exclude=('tests',)),
     install_requires=[
-        'scipy==1.2.0',
+        'scipy==1.10.0',
         'numpy==1.15.4',
         'scikit-learn==0.20.2',
         'lightgbm==2.2.3',
